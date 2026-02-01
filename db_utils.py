@@ -86,7 +86,6 @@ def call_procedure(proc_name, params=None):
     except oracledb.DatabaseError as e:
         # This is how we catch the custom errors from RAISE_APPLICATION_ERROR
         error_obj, = e.args
-        # The error message is in the 'message' attribute
         # We strip the Oracle error code part (e.g., "ORA-20001: ")
         friendly_message = error_obj.message.split(':', 1)[-1].strip()
         return (False, friendly_message)
@@ -108,7 +107,7 @@ def create_course_with_details(course_name, filiere_id, semestre_id, capacity, p
             course_id_var = cursor.var(oracledb.NUMBER)
             sql_insert_course = "INSERT INTO course (NAME, FILIERE_ID, SEMESTRE_ID, CAPACITY) VALUES (:1, :2, :3, :4) RETURNING COURSE_ID INTO :5"
             cursor.execute(sql_insert_course, [course_name, filiere_id, semestre_id, capacity, course_id_var])
-            new_course_id = course_id_var.getvalue()[0]
+            new_course_id = int(course_id_var.getvalue()[0])
 
             # 2. Insert the professor-course link
             sql_assign_prof = "INSERT INTO prof_course (PROF_ID, COURSE_ID) VALUES (:1, :2)"
@@ -118,7 +117,7 @@ def create_course_with_details(course_name, filiere_id, semestre_id, capacity, p
             if prerequisite_ids:
                 sql_add_prereq = "INSERT INTO course_prerequisite (COURSE_ID, PREREQUISITE_COURSE_ID) VALUES (:1, :2)"
                 # Use executemany for efficiency
-                prereq_data = [(new_course_id, prereq_id) for prereq_id in prerequisite_ids]
+                prereq_data = [(new_course_id, int(prereq_id)) for prereq_id in prerequisite_ids]
                 cursor.executemany(sql_add_prereq, prereq_data)
         
         connection.commit() # Commit the transaction
@@ -153,8 +152,8 @@ def create_new_professor(full_name, department_id, password):
             with connection.cursor() as cursor:
                 # 1. Generate code and insert into USER_ACCOUNT
                 new_code = f"P{random.randint(1000, 9999)}"
-                sql_user_account = "INSERT INTO USER_ACCOUNT (LOGIN_CODE, PASSWORD_HASH, ROLE) VALUES (:1, :2, 'PROF')"
-                cursor.execute(sql_user_account, [new_code, password])
+                sql_user_account = "INSERT INTO USER_ACCOUNT (LOGIN_CODE, PASSWORD_HASH, ROLE) VALUES (:1, :2, :3)"
+                cursor.execute(sql_user_account, [new_code, password, 'PROF'])
 
                 # 2. Insert into PROF table
                 sql_prof = "INSERT INTO PROF (CODE_APOGE, FULL_NAME, DEPARTEMENT_ID) VALUES (:1, :2, :3)"
@@ -214,3 +213,58 @@ def call_function_ref_cursor(func_name, params=None):
     except Exception as e:
         st.error(f"An unexpected error occurred calling function '{func_name}': {e}")
         return pd.DataFrame()
+
+# New function to delete a course and its related data
+def delete_course_with_details(course_id):
+    pool = init_connection_pool()
+    connection = None
+    try:
+        connection = pool.acquire()
+        connection.begin() # Start a transaction
+        with connection.cursor() as cursor:
+            # 1. Delete from ATTENDANCE (indirectly via SEANCE)
+            # Find all seance_ids for the course
+            seance_ids_df = execute_query("SELECT SEANCE_ID FROM SEANCE WHERE COURSE_ID = :1", [course_id])
+            if not seance_ids_df.empty:
+                seance_ids = [s_id for s_id in seance_ids_df['SEANCE_ID'].tolist()]
+                # Construct an IN clause dynamically
+                if seance_ids: # Ensure list is not empty before using IN
+                    # oracledb automatically handles lists for IN clauses, no need to construct string
+                    # Use execute_dml directly or sanitize_params if needed
+                    placeholders = ', '.join([':' + str(i+1) for i in range(len(seance_ids))])
+                    cursor.execute(f"DELETE FROM ATTENDANCE WHERE SEANCE_ID IN ({placeholders})", seance_ids)
+
+
+            # 2. Delete from SEANCE
+            cursor.execute("DELETE FROM SEANCE WHERE COURSE_ID = :1", [course_id])
+            # 3. Delete from COURSE_RESULT
+            cursor.execute("DELETE FROM COURSE_RESULT WHERE COURSE_ID = :1", [course_id])
+            # 4. Delete from INSCRIPTION_REQUEST
+            cursor.execute("DELETE FROM INSCRIPTION_REQUEST WHERE COURSE_ID = :1", [course_id])
+            # 5. Delete from UNBLOCK_REQUEST
+            cursor.execute("DELETE FROM UNBLOCK_REQUEST WHERE COURSE_ID = :1", [course_id])
+            # 6. Delete from COURSE_PREREQUISITE (where it is the main course)
+            cursor.execute("DELETE FROM COURSE_PREREQUISITE WHERE COURSE_ID = :1", [course_id])
+            # 7. Delete from COURSE_PREREQUISITE (where it is a prerequisite for another course)
+            cursor.execute("DELETE FROM COURSE_PREREQUISITE WHERE PREREQUISITE_COURSE_ID = :1", [course_id])
+            # 8. Delete from PROF_COURSE
+            cursor.execute("DELETE FROM PROF_COURSE WHERE COURSE_ID = :1", [course_id])
+            # 9. Finally, delete the COURSE itself
+            cursor.execute("DELETE FROM COURSE WHERE COURSE_ID = :1", [course_id])
+        
+        connection.commit() # Commit the transaction
+        return (True, f"Course ID {course_id} and all related data deleted successfully.")
+
+    except oracledb.DatabaseError as e:
+        if connection:
+            connection.rollback() # Rollback on any database error
+        error_obj, = e.args
+        friendly_message = error_obj.message.split(':', 1)[-1].strip()
+        return (False, friendly_message)
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        return (False, f"An unexpected error occurred: {e}")
+    finally:
+        if connection:
+            pool.release(connection)

@@ -230,8 +230,8 @@ BEGIN
     INTO v_count_in_year
     FROM prof_course pc
     JOIN course c ON pc.course_id = c.course_id
-    JOIN semestre s ON c.semestre_id = c.semestre_id
-    WHERE pc.prof_id = :NEW.prof.prof_id -- This is a typo in the replace string, should be :NEW.prof_id
+    JOIN semestre s ON c.semestre_id = s.semestre_id
+    WHERE pc.prof_id = :NEW.prof_id -- This is a typo in the replace string, should be :NEW.prof_id
       AND s.year_id = v_new_course_year_id;
 
     -- 3. Check if the count is already 3 or more.
