@@ -109,6 +109,41 @@ def display_attendance_management(prof_id):
         
         seance_id = int(seances_df[seances_df['display'] == selected_seance_display].iloc[0]['SEANCE_ID'])
 
+        # --- Fetch detailed session info for the card ---
+        session_details_query = """
+            SELECT
+                f.NAME AS FILIERE_NAME,
+                sec.NAME AS SECTION_NAME,
+                se.ROOM,
+                se.TYPE,
+                TO_CHAR(se.START_TIME, 'HH24:MI') AS START_TIME,
+                TO_CHAR(se.END_TIME, 'HH24:MI') AS END_TIME,
+                se.SEANCE_DATE
+            FROM SEANCE se
+            JOIN COURSE c ON se.COURSE_ID = c.COURSE_ID
+            JOIN SEMESTRE sm ON c.SEMESTRE_ID = sm.SEMESTRE_ID
+            JOIN FILIERE f ON sm.FILIERE_ID = f.FILIERE_ID
+            JOIN SECTION sec ON se.SECTION_ID = sec.SECTION_ID
+            WHERE se.SEANCE_ID = :1
+        """
+        session_details_df = execute_query(session_details_query, [seance_id])
+
+        if not session_details_df.empty:
+            details = session_details_df.iloc[0]
+            with st.container(border=True):
+                st.markdown("#### Session Details")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.write(f"**Course:** {selected_seance_display.split(' - ')[0].split(' (')[0]}") # Extract course name from display
+                    st.write(f"**Filière:** {details['FILIERE_NAME']}")
+                    st.write(f"**Section:** {details['SECTION_NAME']}")
+                with col2:
+                    st.write(f"**Type:** {details['TYPE']}")
+                    st.write(f"**Room:** {details['ROOM']}")
+                    st.write(f"**Date:** {details['SEANCE_DATE'].strftime('%Y-%m-%d')}") # Format date
+                    st.write(f"**Time:** {details['START_TIME']} - {details['END_TIME']}")
+            st.markdown("---")
+        
         # Get students for the selected seance
         students_in_seance_df = call_function_ref_cursor("fn_students_in_seance", [seance_id])
 

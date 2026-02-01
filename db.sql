@@ -1136,29 +1136,12 @@ CREATE INDEX idx_attendance_student ON attendance(student_id);
 CREATE INDEX idx_attendance_seance ON attendance(seance_id);
 CREATE INDEX idx_course_semestre ON course(semestre_id);
 CREATE INDEX idx_inscription_status ON inscription_request(status);
--- Final and definitive fix for the capacity check logic.
--- This block first cleans up all previous, conflicting triggers.
-BEGIN
-   EXECUTE IMMEDIATE 'DROP TRIGGER trg_check_course_capacity';
-EXCEPTION
-   WHEN OTHERS THEN
-      IF SQLCODE != -4080 THEN -- suppress "trigger does not exist" error
-         RAISE;
-      END IF;
-END;
 /
 
-BEGIN
-   EXECUTE IMMEDIATE 'DROP TRIGGER trg_check_course_capacity_compound';
-EXCEPTION
-   WHEN OTHERS THEN
-      IF SQLCODE != -4080 THEN -- suppress "trigger does not exist" error
-         RAISE;
-      END IF;
-END;
-/
+-- This is the definitive fix for the ORA-04091 mutating table error.
+-- It uses an autonomous transaction to safely check capacity.
 
--- Then, it creates the correct implementation using an autonomous function.
+-- 1. A standalone function that runs in its own transaction.
 CREATE OR REPLACE FUNCTION fn_check_course_capacity (
     p_course_id IN course.course_id%TYPE
 ) RETURN NUMBER
@@ -1167,39 +1150,41 @@ IS
     v_current_count NUMBER;
     v_capacity      NUMBER;
 BEGIN
-    -- Get the course's capacity
+    -- Get the course's defined capacity
     SELECT capacity
     INTO v_capacity
     FROM course
     WHERE course_id = p_course_id;
 
-    -- Get the current number of accepted students
+    -- Get the current count of COMMITTED 'ACCEPTED' students
     SELECT COUNT(*)
     INTO v_current_count
     FROM inscription_request
     WHERE course_id = p_course_id AND status = 'ACCEPTED';
 
-    -- If capacity is exceeded, raise an error
-    IF v_current_count > v_capacity THEN
+    -- If the current count is already at or above capacity, we cannot accept another.
+    IF v_current_count >= v_capacity THEN
         RAISE_APPLICATION_ERROR(-20060, 'Echec inscription : Le cours a atteint sa capacité maximale (' || v_capacity || ')');
     END IF;
     
-    COMMIT; -- Required for autonomous transactions
-    RETURN 1; -- Return a success value
+    COMMIT; -- Autonomous transactions must be committed or rolled back.
+    RETURN 1; -- Indicate success
 EXCEPTION
     WHEN OTHERS THEN
-        ROLLBACK; -- Rollback on error
-        RAISE; -- Re-raise the original exception to the calling statement
+        ROLLBACK; -- Crucial to roll back the autonomous transaction on any error
+        RAISE;    -- Re-raise the exception so the main transaction also fails
 END fn_check_course_capacity;
 /
 
-CREATE OR REPLACE TRIGGER trg_check_capacity_on_accept
-AFTER UPDATE OF status ON inscription_request
+-- 2. A simple trigger that calls the function before an update.
+-- This replaces all previous versions of the capacity-checking trigger.
+CREATE OR REPLACE TRIGGER trg_check_course_capacity
+BEFORE UPDATE OF status ON inscription_request
 FOR EACH ROW
 DECLARE
     v_result NUMBER;
 BEGIN
-    -- If a student is accepted, call the autonomous function to check capacity
+    -- When a request is being updated to 'ACCEPTED', call our validation function.
     IF :NEW.status = 'ACCEPTED' AND :OLD.status <> 'ACCEPTED' THEN
         v_result := fn_check_course_capacity(:NEW.course_id);
     END IF;
