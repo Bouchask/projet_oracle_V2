@@ -147,50 +147,70 @@ def display_courses_and_registration(student):
         st.info("You have no active enrollment requests.")
 
 def display_schedule(student):
-    """Displays the student's personal schedule."""
-    st.subheader("🗓️ My Schedule")
-    
-    # Query for all seances related to the student's accepted courses
-    schedule_query = """
-        SELECT 
-            c.NAME as COURSE_NAME,
-            se.TYPE,
-            se.ROOM,
-            se.SEANCE_DATE,
-            TO_CHAR(se.START_TIME, 'HH24:MI') as START_TIME,
-            TO_CHAR(se.END_TIME, 'HH24:MI') as END_TIME,
-            p.FULL_NAME as PROF_NAME
-        FROM SEANCE se
-        JOIN COURSE c ON se.COURSE_ID = c.COURSE_ID
-        JOIN INSCRIPTION_REQUEST ir ON ir.COURSE_ID = c.COURSE_ID
-        LEFT JOIN PROF_COURSE pc ON pc.COURSE_ID = c.COURSE_ID
-        LEFT JOIN PROF p ON p.PROF_ID = pc.PROF_ID
-        WHERE ir.STUDENT_ID = :1 AND ir.STATUS = 'ACCEPTED'
-        ORDER BY se.SEANCE_DATE, se.START_TIME
+    """Displays available sections and allows a student to join one."""
+    st.subheader("🗓️ My Sections & Schedule")
+    st.info("This page shows all available sessions for your semester. Join a section to build your final schedule.")
+
+    # 1. Check if student is already in a section for the current semester
+    student_section_query = """
+        SELECT ss.section_id 
+        FROM student_section ss
+        JOIN section sec ON ss.section_id = sec.section_id
+        WHERE ss.student_id = :1 AND sec.semestre_id = :2
     """
-    schedule_df = execute_query(schedule_query, [int(student['STUDENT_ID'])])
+    student_section_df = execute_query(student_section_query, [int(student['STUDENT_ID']), int(student['CURRENT_SEMESTRE_ID'])])
+    student_section_id = student_section_df.iloc[0]['SECTION_ID'] if not student_section_df.empty else None
 
-    if not schedule_df.empty:
-        schedule_df['SEANCE_DATE'] = pd.to_datetime(schedule_df['SEANCE_DATE'])
-        today = pd.to_datetime('today').normalize()
-        
-        upcoming_sessions = schedule_df[schedule_df['SEANCE_DATE'] >= today]
-        past_sessions = schedule_df[schedule_df['SEANCE_DATE'] < today]
+    # 2. Fetch all available sessions for the student's semester
+    all_sessions_query = """
+        SELECT
+            se.seance_id, se.section_id, c.name AS course_name, sec.name AS section_name,
+            se.type, TO_CHAR(se.seance_date, 'YYYY-MM-DD') AS seance_date,
+            TO_CHAR(se.start_time, 'HH24:MI') AS start_time, TO_CHAR(se.end_time, 'HH24:MI') AS end_time,
+            p.full_name as prof_name
+        FROM seance se
+        JOIN course c ON se.course_id = c.course_id
+        JOIN section sec ON se.section_id = sec.section_id
+        LEFT JOIN prof_course pc ON c.course_id = pc.course_id
+        LEFT JOIN prof p ON pc.prof_id = p.prof_id
+        WHERE c.semestre_id = :1
+        ORDER BY sec.name, se.seance_date, se.start_time
+    """
+    all_sessions_df = execute_query(all_sessions_query, [int(student['CURRENT_SEMESTRE_ID'])])
 
-        st.markdown("#### Upcoming Sessions")
-        if not upcoming_sessions.empty:
-            st.dataframe(
-                upcoming_sessions.rename(columns={
-                    'COURSE_NAME': 'Course', 'TYPE': 'Type', 'ROOM': 'Room', 
-                    'SEANCE_DATE': 'Date', 'START_TIME': 'Start', 'END_TIME': 'End', 'PROF_NAME': 'Professor'
-                }),
-                use_container_width=True, hide_index=True
-            )
-        else:
-            st.info("No upcoming sessions found.")
-        
+    if not all_sessions_df.empty:
+        # Group sessions by section to make the UI clearer
+        sections = all_sessions_df['SECTION_ID'].unique()
+        for section_id in sections:
+            section_sessions_df = all_sessions_df[all_sessions_df['SECTION_ID'] == section_id]
+            # Corrected: Use uppercase 'SECTION_NAME'
+            section_name = section_sessions_df.iloc[0]['SECTION_NAME']
+            
+            with st.container(border=True):
+                col1, col2 = st.columns([3, 1])
+                with col1:
+                    st.markdown(f"#### Section: **{section_name}**")
+                
+                with col2:
+                    # Display conditional button or badge
+                    if student_section_id is None:
+                        if st.button("Confirm Attendance/Join Section", key=f"join_{section_id}"):
+                            success, msg = execute_dml(
+                                "INSERT INTO STUDENT_SECTION (student_id, section_id) VALUES (:1, :2)",
+                                [int(student['STUDENT_ID']), int(section_id)]
+                            )
+                            if success:
+                                st.success(f"Successfully joined section '{section_name}'! Your schedule is now finalized.")
+                                st.rerun()
+                            else:
+                                st.error(f"Failed to join section: {msg}")
+                    elif student_section_id == section_id:
+                        st.success("✓ You are in this section")
+
+                # Corrected: Use uppercase column names
+                st.dataframe(section_sessions_df[['COURSE_NAME', 'TYPE', 'SEANCE_DATE', 'START_TIME', 'END_TIME', 'PROF_NAME']], use_container_width=True, hide_index=True)
     else:
-        st.info("Your schedule is empty. Enroll in courses to see your schedule.")
+        st.warning("There are no sessions scheduled for your semester yet. Please check back later.")
 
 def display_performance_and_profile(student):
     """Displays academic performance and profile settings."""
@@ -218,7 +238,55 @@ def display_performance_and_profile(student):
         
     st.divider()
 
-    # --- 2. Security: Change Password ---
+    # --- 2. Grades & Academic Results ---
+    st.markdown("#### 📖 Grades & Academic Results")
+
+    results_query = """
+        SELECT
+            c.NAME AS "Course Name",
+            cr.GRADE,
+            cr.STATUS,
+            ay.LABEL AS "Academic Year",
+            s.CODE AS "Semester"
+        FROM COURSE_RESULT cr
+        JOIN COURSE c ON cr.COURSE_ID = c.COURSE_ID
+        JOIN SEMESTRE s ON cr.SEMESTRE_ID = s.SEMESTRE_ID
+        JOIN ACADEMIC_YEAR ay ON cr.YEAR_ID = ay.YEAR_ID
+        WHERE cr.STUDENT_ID = :1
+        ORDER BY ay.START_DATE DESC, s.CODE
+    """
+    results_df = execute_query(results_query, [int(student['STUDENT_ID'])])
+
+    if not results_df.empty:
+        # Calculate and display GPA from validated courses with non-null grades
+        validated_courses_df = results_df[results_df['STATUS'] == 'VALID'].dropna(subset=['GRADE'])
+        if not validated_courses_df.empty:
+            gpa = validated_courses_df['GRADE'].mean()
+            st.metric("General Average (GPA)", f"{gpa:.2f} / 20")
+        else:
+            st.metric("General Average (GPA)", "N/A")
+
+        # Style and display the full results table
+        def style_status(status):
+            if status == 'VALID':
+                return 'background-color: #28a745; color: white'
+            elif status == 'FAILED':
+                return 'background-color: #dc3545; color: white'
+            elif status == 'IN_PROGRESS':
+                return 'background-color: #ffc107; color: black'
+            return ''
+        
+        st.dataframe(
+            results_df.style.apply(lambda col: col.map(style_status), subset=['STATUS']),
+            use_container_width=True,
+            hide_index=True
+        )
+    else:
+        st.info("No academic results have been recorded for you yet.")
+
+    st.divider()
+
+    # --- 3. Security: Change Password ---
     with st.expander("🔑 Change Password"):
         with st.form("change_password_form"):
             new_pass = st.text_input("New Password", type="password")

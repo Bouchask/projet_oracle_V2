@@ -1,7 +1,6 @@
 # app.py
 import streamlit as st
 from auth import login_user
-from db_utils import init_connection_pool
 
 def display_login_form():
     """Displays the login form and handles login logic."""
@@ -36,8 +35,8 @@ def main():
     st.set_page_config(layout="wide", page_title="Advanced Course Registration System")
     st.title("🎓 Advanced Course Registration System")
 
-    # Initialize the database connection pool once
-    init_connection_pool()
+    # The new connection pool logic in db_utils is now automatic and
+    # does not require initialization here.
 
     # Check if user is logged in
     if not st.session_state.get("logged_in"):
@@ -47,11 +46,9 @@ def main():
         st.sidebar.success(f"Welcome, {user['LOGIN_CODE']}!")
         st.sidebar.write(f"Role: **{user['ROLE']}**")
 
-        # --- Role-based dashboard switching will go here ---
+        # --- Role-based dashboard switching ---
         from admin_dashboard import display_admin_dashboard
-
         from prof_dashboard import display_prof_dashboard
-
         from student_dashboard import display_student_dashboard
 
         if user['ROLE'] == 'ADMIN':
@@ -64,9 +61,9 @@ def main():
             st.error("Unknown role. Access denied.")
 
         if st.sidebar.button("Logout"):
-            # Clear session state to log out
+            # Clear session state to log out, but preserve the connection pools
             for key in list(st.session_state.keys()):
-                if key not in ['db_pool']: # Don't clear the db pool
+                if key not in ['db_pools']: # Updated from 'db_pool'
                     del st.session_state[key]
             st.rerun()
 

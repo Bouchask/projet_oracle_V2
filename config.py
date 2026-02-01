@@ -1,14 +1,53 @@
 # config.py
 
-# It is strongly recommended to use environment variables for sensitive data.
-# For this example, we are hardcoding the values for simplicity.
+# =================================================================
+# Oracle Connection Details
+# =================================================================
 
-ORACLE_USER = "YAHYA_ADMIN"
-ORACLE_PASSWORD = "yahya_admin_password"
+# This DSN (Data Source Name) is the address of your Oracle database.
 ORACLE_DSN = "localhost:1521/ORCLCDB"
 
-# You can also construct the DSN from individual components:
-# ORACLE_HOST = "localhost"
-# ORACLE_PORT = 1521
-# ORACLE_SERVICE_NAME = "ORCLCDB"
-# ORACLE_DSN = f"{ORACLE_HOST}:{ORACLE_PORT}/{ORACLE_SERVICE_NAME}"
+# =================================================================
+# Application User Credentials
+# =================================================================
+# This dictionary maps application roles to the specific, low-privilege
+# database users created in security.sql.
+#
+# The application will dynamically choose which user to connect as
+# based on the logged-in user's role.
+# =================================================================
+
+APP_USERS = {
+    # The AUTH user can ONLY read the user_account table to verify passwords.
+    "AUTH": {
+        "user": "app_auth", 
+        "pass": "auth_password"
+    },
+    
+    # The STUDENT user has read-only access to its own data and can make
+    # new inscription requests.
+    "STUDENT": {
+        "user": "app_student",
+        "pass": "student_password"
+    },
+
+    # The PROF user can manage courses, attendance, and grades for the
+    # courses they are assigned to.
+    "PROF": {
+        "user": "app_prof",
+        "pass": "prof_password"
+    },
+
+    # The ADMIN user has full control over the schema to perform
+    # administrative tasks.
+    "ADMIN": {
+        "user": "app_admin",
+        "pass": "admin_password"
+    }
+}
+
+# The YAHYA_ADMIN user is now considered the "schema owner" and should
+# only be used for database maintenance (like running db.sql or security.sql),
+# not for running the application itself.
+SCHEMA_OWNER_USER = "YAHYA_ADMIN"
+SCHEMA_OWNER_PASSWORD = "yahya_admin_password"

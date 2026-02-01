@@ -1,185 +1,158 @@
--- =====================================================
--- Idempotent Security Setup Script
--- With PDB Container Switch
--- =====================================================
+-- =================================================================
+-- security.sql - V7 - FINAL with Statement Terminators
+-- =================================================================
+-- This script provides a complete and audited set of permissions for
+-- the per-role security model AND creates public synonyms.
+-- This version includes semicolons after every SQL statement for
+-- compatibility with SQL*Plus.
+-- =================================================================
+
+SET ECHO ON;
+WHENEVER SQLERROR EXIT SQL.SQLCODE;
+
 SET SERVEROUTPUT ON;
 ALTER SESSION SET "_ORACLE_SCRIPT"=true;
 
+-- This script must be run as a DBA user (e.g., SYSTEM)
+
+-- 1. Clean up old objects
+PROMPT Dropping old users and roles (ignoring 'does not exist' errors)...
+BEGIN EXECUTE IMMEDIATE 'DROP USER app_admin CASCADE'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1918 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP USER app_prof CASCADE'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1918 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP USER app_student CASCADE'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1918 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP USER app_auth CASCADE'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1918 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP ROLE ROLE_ADMIN'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1940 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP ROLE ROLE_PROF'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1940 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP ROLE ROLE_STUDENT'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1940 THEN NULL; END IF; END;
+/
+BEGIN EXECUTE IMMEDIATE 'DROP ROLE ROLE_AUTH'; EXCEPTION WHEN OTHERS THEN IF SQLCODE != -1940 THEN NULL; END IF; END;
+/
+
+-- 2. Create Application Users
+PROMPT Creating application users...
+CREATE USER app_admin IDENTIFIED BY "admin_password";
+CREATE USER app_prof IDENTIFIED BY "prof_password";
+CREATE USER app_student IDENTIFIED BY "student_password";
+CREATE USER app_auth IDENTIFIED BY "auth_password";
+
+GRANT CREATE SESSION TO app_admin, app_prof, app_student, app_auth;
+
+ALTER USER app_admin QUOTA UNLIMITED ON USERS;
+ALTER USER app_prof QUOTA UNLIMITED ON USERS;
+ALTER USER app_student QUOTA UNLIMITED ON USERS;
+ALTER USER app_auth QUOTA UNLIMITED ON USERS;
+
+-- 3. Create Roles
+PROMPT Creating roles...
+CREATE ROLE ROLE_ADMIN;
+CREATE ROLE ROLE_PROF;
+CREATE ROLE ROLE_STUDENT;
+CREATE ROLE ROLE_AUTH;
+
 -- =====================================================
--- 0️⃣ Switch to Pluggable Database (PDB)
+-- 4. Grant Privileges to Roles (Fully Audited)
 -- =====================================================
+PROMPT Granting privileges to roles...
+
+-- AUTH Role:
+GRANT SELECT ON YAHYA_ADMIN.user_account TO ROLE_AUTH;
+
+-- STUDENT Role:
+GRANT SELECT ON YAHYA_ADMIN.student TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.filiere TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.semestre TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.academic_year TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.course TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.prof TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.prof_course TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.seance TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.section TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.student_section TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.inscription_request TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.course_result TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.departement TO ROLE_STUDENT;
+GRANT UPDATE (password_hash) ON YAHYA_ADMIN.user_account TO ROLE_STUDENT;
+GRANT INSERT ON YAHYA_ADMIN.inscription_request TO ROLE_STUDENT;
+GRANT INSERT ON YAHYA_ADMIN.student_section TO ROLE_STUDENT;
+GRANT EXECUTE ON YAHYA_ADMIN.fn_student_seances TO ROLE_STUDENT;
+GRANT EXECUTE ON YAHYA_ADMIN.fn_student_courses TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.v_detail_course TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.v_student_current_courses TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.v_student_absence_stats TO ROLE_STUDENT;
+GRANT SELECT ON YAHYA_ADMIN.v_student_blocked_courses TO ROLE_STUDENT;
+
+-- PROF Role:
+GRANT SELECT ON YAHYA_ADMIN.course TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.semestre TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.academic_year TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.student TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.inscription_request TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.attendance TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.seance TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.prof TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.prof_course TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.filiere TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.section TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.v_prof_courses TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.v_prof_seances TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.v_prof_students_by_course TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.v_prof_blocked_students TO ROLE_PROF;
+GRANT SELECT ON YAHYA_ADMIN.v_prof_absence_stats TO ROLE_PROF;
+GRANT UPDATE ON YAHYA_ADMIN.inscription_request TO ROLE_PROF;
+GRANT UPDATE ON YAHYA_ADMIN.attendance TO ROLE_PROF;
+GRANT EXECUTE ON YAHYA_ADMIN.fn_students_in_seance TO ROLE_PROF;
+GRANT EXECUTE ON YAHYA_ADMIN.sp_prof_submit_grade TO ROLE_PROF;
+
+-- ADMIN Role:
+PROMPT -> Granting ADMIN privileges...
 DECLARE
-  v_pdb_name VARCHAR2(100);
+  v_owner VARCHAR2(30) := 'YAHYA_ADMIN';
 BEGIN
-  -- In a multi-tenant environment, switch to the application's PDB.
-  -- This assumes there is one writable PDB where the schema resides.
-  SELECT name INTO v_pdb_name FROM v$pdbs WHERE open_mode = 'READ WRITE' AND ROWNUM = 1 AND name != 'PDB$SEED';
-  IF v_pdb_name IS NOT NULL THEN
-    DBMS_OUTPUT.PUT_LINE('Switching session container to PDB: ' || v_pdb_name);
-    EXECUTE IMMEDIATE 'ALTER SESSION SET CONTAINER = ' || v_pdb_name;
-  END IF;
-EXCEPTION
-  WHEN NO_DATA_FOUND THEN
-    DBMS_OUTPUT.PUT_LINE('No open PDB found. Assuming non-CDB or already in the correct container.');
-  WHEN OTHERS THEN
-    DBMS_OUTPUT.PUT_LINE('Warning: Could not switch PDB container. ' || SQLERRM);
+  FOR t IN (SELECT table_name FROM all_tables WHERE owner = v_owner) LOOP
+    EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON '||v_owner||'.'||t.table_name||' TO ROLE_ADMIN';
+  END LOOP;
+  FOR v IN (SELECT view_name FROM all_views WHERE owner = v_owner) LOOP
+    EXECUTE IMMEDIATE 'GRANT SELECT ON '||v_owner||'.'||v.view_name||' TO ROLE_ADMIN';
+  END LOOP;
 END;
 /
 
 -- =====================================================
--- 1️⃣ Create Application Owner (if not exists)
+-- 5. Assign Roles to Application Users
 -- =====================================================
+PROMPT Assigning roles to users...
+GRANT ROLE_ADMIN TO app_admin;
+GRANT ROLE_PROF TO app_prof;
+GRANT ROLE_STUDENT TO app_student;
+GRANT ROLE_AUTH TO app_auth;
+
+
+-- =====================================================
+-- 6. Create Public Synonyms
+-- =====================================================
+PROMPT Creating public synonyms...
 DECLARE
-  v_user_exists NUMBER;
+  v_owner VARCHAR2(30) := 'YAHYA_ADMIN';
 BEGIN
-  SELECT COUNT(*) INTO v_user_exists FROM all_users WHERE username = 'YAHYA_ADMIN';
-  IF v_user_exists = 0 THEN
-    EXECUTE IMMEDIATE 'CREATE USER YAHYA_ADMIN IDENTIFIED BY "yahya_admin_password"';
-    EXECUTE IMMEDIATE 'GRANT CONNECT, RESOURCE, CREATE VIEW, CREATE PROCEDURE, CREATE TRIGGER TO YAHYA_ADMIN';
-    EXECUTE IMMEDIATE 'ALTER USER YAHYA_ADMIN QUOTA UNLIMITED ON USERS';
-  END IF;
+  FOR t IN (SELECT table_name FROM all_tables WHERE owner = v_owner) LOOP
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE PUBLIC SYNONYM '||t.table_name||' FOR '||v_owner||'.'||t.table_name;
+  END LOOP;
+  FOR v IN (SELECT view_name FROM all_views WHERE owner = v_owner) LOOP
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE PUBLIC SYNONYM '||v.view_name||' FOR '||v_owner||'.'||v.view_name;
+  END LOOP;
+  FOR p IN (SELECT object_name FROM all_objects WHERE owner = v_owner AND object_type IN ('PROCEDURE', 'FUNCTION')) LOOP
+    EXECUTE IMMEDIATE 'CREATE OR REPLACE PUBLIC SYNONYM '||p.object_name||' FOR '||v_owner||'.'||p.object_name;
+  END LOOP;
 END;
 /
 
--- =====================================================
--- 2️⃣ Create Roles (if not exists)
--- =====================================================
-DECLARE
-  v_role_exists NUMBER;
-BEGIN
-  SELECT COUNT(*) INTO v_role_exists FROM dba_roles WHERE role = 'ROLE_STUDENT';
-  IF v_role_exists = 0 THEN
-    EXECUTE IMMEDIATE 'CREATE ROLE role_student';
-  END IF;
-
-  SELECT COUNT(*) INTO v_role_exists FROM dba_roles WHERE role = 'ROLE_PROF';
-  IF v_role_exists = 0 THEN
-    EXECUTE IMMEDIATE 'CREATE ROLE role_prof';
-  END IF;
-
-  SELECT COUNT(*) INTO v_role_exists FROM dba_roles WHERE role = 'ROLE_ADMIN';
-  IF v_role_exists = 0 THEN
-    EXECUTE IMMEDIATE 'CREATE ROLE role_admin';
-  END IF;
-END;
-/
-
--- =====================================================
--- 3️⃣ Grant Basic Privileges
--- =====================================================
-GRANT CREATE SESSION TO role_student, role_prof, role_admin;
-
--- =====================================================
--- 4️⃣ Create App Users (if not exists)
--- =====================================================
-DECLARE
-    v_user_exists NUMBER;
-BEGIN
-    SELECT COUNT(*) INTO v_user_exists FROM all_users WHERE username = 'PROF_USER';
-    IF v_user_exists = 0 THEN
-        EXECUTE IMMEDIATE 'CREATE USER prof_user IDENTIFIED BY "123"';
-    END IF;
-    EXECUTE IMMEDIATE 'GRANT role_prof TO prof_user';
-
-    SELECT COUNT(*) INTO v_user_exists FROM all_users WHERE username = 'STUDENT_USER';
-    IF v_user_exists = 0 THEN
-        EXECUTE IMMEDIATE 'CREATE USER student_user IDENTIFIED BY "123"';
-    END IF;
-    EXECUTE IMMEDIATE 'GRANT role_student TO student_user';
-END;
-/
-
--- =====================================================
--- 5️⃣ Grant Object Privileges
--- =====================================================
-DECLARE
-    v_owner VARCHAR2(30) := 'YAHYA_ADMIN';
-BEGIN
-    -- Grant full CRUD on all tables to admin
-    FOR t IN (SELECT table_name FROM all_tables WHERE owner = v_owner) LOOP
-        EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE, DELETE ON '||v_owner||'.'||t.table_name||' TO role_admin';
-    END LOOP;
-
-    -- Grant SELECT on all views to admin and specific roles
-    FOR v IN (SELECT view_name FROM all_views WHERE owner = v_owner) LOOP
-        EXECUTE IMMEDIATE 'GRANT SELECT ON '||v_owner||'.'||v.view_name||' TO role_admin';
-        
-        IF v.view_name LIKE 'V_PROF_%' THEN
-            EXECUTE IMMEDIATE 'GRANT SELECT ON '||v_owner||'.'||v.view_name||' TO role_prof';
-        ELSIF v.view_name LIKE 'V_STUDENT_%' THEN
-            EXECUTE IMMEDIATE 'GRANT SELECT ON '||v_owner||'.'||v.view_name||' TO role_student';
-        END IF;
-    END LOOP;
-
-    -- Grant specific privileges to roles
-    EXECUTE IMMEDIATE 'GRANT INSERT ON '||v_owner||'.inscription_request TO role_student';
-    EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE ON '||v_owner||'.attendance TO role_prof';
-    EXECUTE IMMEDIATE 'GRANT SELECT, INSERT, UPDATE ON '||v_owner||'.course_result TO role_prof';
-    EXECUTE IMMEDIATE 'GRANT SELECT ON '||v_owner||'.prof_course TO role_prof';
-    EXECUTE IMMEDIATE 'GRANT SELECT ON '||v_owner||'.seance TO role_prof';
-END;
-/
-
--- =====================================================
--- 6️⃣ Create Procedures (owned by YAHYA_ADMIN)
--- =====================================================
-CREATE OR REPLACE PROCEDURE YAHYA_ADMIN.sp_add_student (
-    p_login      IN VARCHAR2,
-    p_pass       IN VARCHAR2,
-    p_name       IN VARCHAR2,
-    p_filiere    IN NUMBER,
-    p_semestre   IN NUMBER
-) AS 
-BEGIN
-    INSERT INTO YAHYA_ADMIN.user_account (login_code, password_hash, role) 
-    VALUES (UPPER(p_login), p_pass, 'STUDENT');
-    
-    INSERT INTO YAHYA_ADMIN.student (code_apoge, full_name, filiere_id, current_semestre_id) 
-    VALUES (UPPER(p_login), p_name, p_filiere, p_semestre);
-END;
-/
-
-CREATE OR REPLACE PROCEDURE YAHYA_ADMIN.sp_prof_submit_grade (
-    p_student_id IN NUMBER,
-    p_course_id  IN NUMBER,
-    p_grade      IN NUMBER
-) AS
-    v_sem_id NUMBER;
-    v_year_id NUMBER;
-BEGIN
-    SELECT semestre_id INTO v_sem_id FROM YAHYA_ADMIN.course WHERE course_id = p_course_id;
-    SELECT year_id INTO v_year_id FROM YAHYA_ADMIN.semestre WHERE semestre_id = v_sem_id;
-
-    MERGE INTO YAHYA_ADMIN.course_result cr
-    USING DUAL ON (cr.student_id = p_student_id AND cr.course_id = p_course_id)
-    WHEN MATCHED THEN
-        UPDATE SET grade = p_grade, status = CASE WHEN p_grade >= 10 THEN 'VALID' ELSE 'FAILED' END
-    WHEN NOT MATCHED THEN
-        INSERT (student_id, course_id, semestre_id, year_id, grade, status)
-        VALUES (p_student_id, p_course_id, v_sem_id, v_year_id, p_grade, CASE WHEN p_grade >= 10 THEN 'VALID' ELSE 'FAILED' END);
-END;
-/
-
--- =====================================================
--- 7️⃣ Grant Execute Privileges and Create Synonyms
--- =====================================================
-GRANT EXECUTE ON YAHYA_ADMIN.sp_add_student TO role_admin;
-GRANT EXECUTE ON YAHYA_ADMIN.admin_unblock_student TO role_admin;
-GRANT EXECUTE ON YAHYA_ADMIN.sp_prof_submit_grade TO role_prof;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_student_current_courses TO role_student;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_student_courses TO role_student;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_student_seances TO role_student;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_student_blocked_courses TO role_student;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_missing_prerequisites TO role_student;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_prof_courses TO role_prof;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_prof_seances TO role_prof;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_students_in_seance TO role_prof;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_students_present_in_seance TO role_prof;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_course_prerequisites TO role_student, role_prof, role_admin;
-GRANT EXECUTE ON YAHYA_ADMIN.fn_blocked_students TO role_admin;
-
-CREATE OR REPLACE PUBLIC SYNONYM sp_add_student FOR YAHYA_ADMIN.sp_add_student;
-CREATE OR REPLACE PUBLIC SYNONYM sp_prof_submit_grade FOR YAHYA_ADMIN.sp_prof_submit_grade;
-CREATE OR REPLACE PUBLIC SYNONYM admin_unblock_student FOR YAHYA_ADMIN.admin_unblock_student;
+PROMPT Security script finished.
 
 COMMIT;
+/

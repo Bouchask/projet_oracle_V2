@@ -153,19 +153,53 @@ def display_course_management():
             if not sems_form.empty and selected_sem_display_form:
                 current_sem_id_form = int(sems_form[sems_form['DISP'] == selected_sem_display_form]['SEMESTRE_ID'].values[0])
                 current_year_id_form = int(sems_form[sems_form['DISP'] == selected_sem_display_form]['YEAR_ID'].values[0])
+                current_sem_code_str = sems_form[sems_form['DISP'] == selected_sem_display_form]['CODE'].iloc[0]
+                current_sem_code_numeric = int(current_sem_code_str[1:])
                 
+                # Assign Professor (remains the same)
                 prof_query_form = "SELECT p.PROF_ID, p.FULL_NAME FROM PROF p LEFT JOIN PROF_COURSE pc ON p.PROF_ID = pc.PROF_ID LEFT JOIN COURSE c ON pc.COURSE_ID = c.COURSE_ID LEFT JOIN SEMESTRE s ON c.SEMESTRE_ID = s.SEMESTRE_ID WHERE p.DEPARTEMENT_ID = (SELECT DEPARTEMENT_ID FROM FILIERE WHERE FILIERE_ID = :1) GROUP BY p.PROF_ID, p.FULL_NAME HAVING COUNT(CASE WHEN s.YEAR_ID = :2 THEN pc.COURSE_ID END) < 3 OR COUNT(pc.COURSE_ID) = 0 ORDER BY p.FULL_NAME"
                 profs_form = execute_query(prof_query_form, [int(f_id_form), int(current_year_id_form)])
                 selected_prof_form = col2_form.selectbox("Assign Professor", profs_form['FULL_NAME'] if not profs_form.empty else [])
+
+                # --- New Dynamic Prerequisite Filtering ---
+                current_ay_df = execute_query("SELECT START_DATE FROM ACADEMIC_YEAR WHERE YEAR_ID = :1", [current_year_id_form])
+                if not current_ay_df.empty:
+                    current_course_year_start_date = current_ay_df.iloc[0]['START_DATE']
+
+                    prereq_query = """
+                        SELECT c.COURSE_ID, c.NAME || ' - ' || cs.CODE || ' (' || ay.LABEL || ')' AS DISPLAY_NAME
+                        FROM COURSE c
+                        JOIN SEMESTRE cs ON c.SEMESTRE_ID = cs.SEMESTRE_ID
+                        JOIN ACADEMIC_YEAR ay ON cs.YEAR_ID = ay.YEAR_ID
+                        WHERE c.FILIERE_ID = :1 AND (ay.START_DATE < :2 OR (ay.START_DATE = :3 AND TO_NUMBER(SUBSTR(cs.CODE, 2)) < :4))
+                        ORDER BY ay.LABEL DESC, TO_NUMBER(SUBSTR(cs.CODE, 2)) DESC
+                    """
+                    prereq_options_df = execute_query(prereq_query, [int(f_id_form), current_course_year_start_date, current_course_year_start_date, current_sem_code_numeric])
+                    
+                    selected_prereqs_names = st.multiselect(
+                        "Prerequisites (Filtered by academic rules)",
+                        options=prereq_options_df['DISPLAY_NAME'].tolist() if not prereq_options_df.empty else []
+                    )
+                else:
+                    st.warning("Could not determine academic year for prerequisite filtering.")
+                    selected_prereqs_names = []
+                    prereq_options_df = pd.DataFrame() # Ensure df exists
+                # --- End of New Logic ---
 
             if st.button("Add Course"):
                 if not c_name_form or 'profs_form' not in locals() or profs_form.empty or sems_form.empty:
                     st.error("Please fill all required fields and ensure a professor is selected.")
                 else:
                     p_id_form = int(profs_form[profs_form['FULL_NAME'] == selected_prof_form]['PROF_ID'].values[0])
-                    success, msg = create_course_with_details(c_name_form, f_id_form, current_sem_id_form, capacity_form, p_id_form, [])
+                    
+                    prereq_ids = []
+                    if selected_prereqs_names and not prereq_options_df.empty:
+                        prereq_ids = prereq_options_df[prereq_options_df['DISPLAY_NAME'].isin(selected_prereqs_names)]['COURSE_ID'].tolist()
+
+                    success, msg = create_course_with_details(c_name_form, f_id_form, current_sem_id_form, capacity_form, p_id_form, prereq_ids)
+                    
                     if success: 
-                        st.success(msg)
+                        st.success(f"Course '{c_name_form}' created with {len(prereq_ids)} prerequisite(s).")
                         st.rerun()
                     else: 
                         st.error(msg)
@@ -350,38 +384,88 @@ def display_professor_management():
 
 def display_schedule_management():
     st.subheader("📅 Schedule Management")
-    filieres = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE")
-    if not filieres.empty:
-        f_name = st.selectbox("Filiere", filieres['NAME'], key="sch_f")
-        f_id = filieres[filieres['NAME'] == f_name]['FILIERE_ID'].values[0]
-        
-        sems = execute_query("SELECT SEMESTRE_ID, CODE FROM SEMESTRE WHERE FILIERE_ID = :1 AND YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)", [int(f_id)])
-        if not sems.empty:
-            selected_sem = st.selectbox("Semestre", sems['CODE'], key="sch_s")
-            s_id = sems[sems['CODE'] == selected_sem]['SEMESTRE_ID'].values[0]
-            
-            # --- Session List ---
-            st.divider()
-            st.subheader("🗓️ Scheduled Sessions")
 
+    # --- Form to Add New Séance ---
+    with st.expander("➕ Add New Séance"):
+        filieres_form_df = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
+        if not filieres_form_df.empty:
+            f_name_form = st.selectbox("Filiere", filieres_form_df['NAME'], key="sch_f_form")
+            f_id_form = int(filieres_form_df[filieres_form_df['NAME'] == f_name_form]['FILIERE_ID'].iloc[0])
+
+            sems_form_df = execute_query("SELECT SEMESTRE_ID, CODE FROM SEMESTRE WHERE FILIERE_ID = :1 AND YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)", [f_id_form])
+            if not sems_form_df.empty:
+                selected_sem_form = st.selectbox("Semestre", sems_form_df['CODE'], key="sch_s_form")
+                s_id_form = int(sems_form_df[sems_form_df['CODE'] == selected_sem_form]['SEMESTRE_ID'].iloc[0])
+
+                with st.form("new_seance_form"):
+                    courses_form_df = execute_query("SELECT COURSE_ID, NAME FROM COURSE WHERE SEMESTRE_ID = :1", [s_id_form])
+                    sel_c_form = st.selectbox("Course", courses_form_df['NAME'] if not courses_form_df.empty else [])
+                    
+                    col1, col2 = st.columns(2)
+                    s_date_form = col1.date_input("Date")
+                    room_form = col2.text_input("Room")
+                    t_start_form = col1.time_input("Start Time", value=datetime.time(8, 30))
+                    t_end_form = col2.time_input("End Time", value=datetime.time(10, 30))
+                    type_sel_form = st.selectbox("Type", ["COURS", "TD", "TP"])
+
+                    if st.form_submit_button("Add Séance"):
+                        if not sel_c_form:
+                            st.error("This semester has no courses. Please add a course first.")
+                        else:
+                            section_df = execute_query("SELECT SECTION_ID FROM SECTION WHERE FILIERE_ID=:1 AND SEMESTRE_ID=:2 FETCH FIRST 1 ROW ONLY", [f_id_form, s_id_form])
+                            section_id = None
+                            if section_df.empty:
+                                default_section_name = f"{f_name_form.upper()}-{selected_sem_form}-SEC1"
+                                success_create_sec, _ = execute_dml("INSERT INTO SECTION (NAME, FILIERE_ID, SEMESTRE_ID) VALUES (:1, :2, :3)", [default_section_name, f_id_form, s_id_form])
+                                if success_create_sec:
+                                    refetched_df = execute_query("SELECT SECTION_ID FROM SECTION WHERE NAME=:1", [default_section_name])
+                                    if not refetched_df.empty:
+                                        section_id = refetched_df.iloc[0]['SECTION_ID']
+                            else:
+                                section_id = section_df.iloc[0]['SECTION_ID']
+                            
+                            if section_id:
+                                c_id_form = int(courses_form_df[courses_form_df['NAME'] == sel_c_form]['COURSE_ID'].iloc[0])
+                                start_dt = datetime.datetime.combine(s_date_form, t_start_form)
+                                end_dt = datetime.datetime.combine(s_date_form, t_end_form)
+                                dml = "INSERT INTO SEANCE (COURSE_ID, SEANCE_DATE, START_TIME, END_TIME, ROOM, TYPE, SECTION_ID) VALUES (:1, :2, :3, :4, :5, :6, :7)"
+                                params = [c_id_form, s_date_form, start_dt, end_dt, room_form, type_sel_form, int(section_id)]
+                                success, msg = execute_dml(dml, params)
+                                if success:
+                                    st.success("Séance scheduled successfully!")
+                                    st.rerun()
+                                else:
+                                    st.warning(f"Could not schedule séance: {msg}")
+                            else:
+                                st.error("Failed to find or create a required section for this filière/semester.")
+    st.divider()
+
+    # --- View Existing Schedules ---
+    st.subheader("🗓️ View Existing Schedules")
+    filieres_view_df = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
+    if not filieres_view_df.empty:
+        f_name_view = st.selectbox("Filter by Filiere", filieres_view_df['NAME'], key="sch_f_view")
+        f_id_view = int(filieres_view_df[filieres_view_df['NAME'] == f_name_view]['FILIERE_ID'].iloc[0])
+        
+        sems_view_df = execute_query("SELECT SEMESTRE_ID, CODE FROM SEMESTRE WHERE FILIERE_ID = :1 AND YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)", [f_id_view])
+        if not sems_view_df.empty:
+            selected_sem_view = st.selectbox("Filter by Semestre", sems_view_df['CODE'], key="sch_s_view")
+            s_id_view = int(sems_view_df[sems_view_df['CODE'] == selected_sem_view]['SEMESTRE_ID'].iloc[0])
+
+            # --- Session List ---
+            st.markdown("##### Scheduled Sessions")
             sessions_query = """
                 SELECT
-                    se.seance_id,
-                    sec.section_id,
-                    c.name AS "Course",
-                    sec.name AS "Section Name",
-                    se.type AS "Type",
-                    TO_CHAR(se.seance_date, 'YYYY-MM-DD') AS "Date",
-                    TO_CHAR(se.start_time, 'HH24:MI') AS "Start Time",
-                    TO_CHAR(se.end_time, 'HH24:MI') AS "End Time",
-                    se.room AS "Room"
+                    se.seance_id, sec.section_id, c.name AS "Course", sec.name AS "Section Name",
+                    se.type AS "Type", TO_CHAR(se.seance_date, 'YYYY-MM-DD') AS "Date",
+                    TO_CHAR(se.start_time, 'HH24:MI') AS "Start Time", TO_CHAR(se.end_time, 'HH24:MI') AS "End Time", se.room AS "Room"
                 FROM seance se
                 JOIN course c ON se.course_id = c.course_id
                 JOIN section sec ON se.section_id = sec.section_id
                 WHERE sec.filiere_id = :1 AND sec.semestre_id = :2
                 ORDER BY se.seance_date, se.start_time
             """
-            sessions_df = execute_query(sessions_query, [int(f_id), int(s_id)])
+            sessions_df = execute_query(sessions_query, [f_id_view, s_id_view])
 
             if not sessions_df.empty:
                 st.dataframe(sessions_df.drop(columns=['SEANCE_ID', 'SECTION_ID']), use_container_width=True, hide_index=True)
@@ -389,34 +473,23 @@ def display_schedule_management():
                 # --- Detailed Séance View ---
                 st.divider()
                 st.subheader("🔎 View Séance Details")
-
-                sessions_df['display'] = sessions_df.apply(
-                    lambda row: f"{row['Course']} ({row['Type']}) on {row['Date']} at {row['Start Time']}", axis=1
-                )
-                selected_seance_display = st.selectbox(
-                    "Select a séance to view its details:",
-                    ["-- Choose a Séance --"] + sessions_df['display'].tolist()
-                )
+                sessions_df['display'] = sessions_df.apply(lambda row: f"{row['Course']} ({row['Type']}) on {row['Date']} at {row['Start Time']}", axis=1)
+                selected_seance_display = st.selectbox("Select a séance to view its details:", ["-- Choose a Séance --"] + sessions_df['display'].tolist())
 
                 if selected_seance_display != "-- Choose a Séance --":
                     selected_seance_info = sessions_df[sessions_df['display'] == selected_seance_display].iloc[0]
                     selected_seance_id = int(selected_seance_info['SEANCE_ID'])
                     selected_section_id = int(selected_seance_info['SECTION_ID'])
 
-                    prof_df = execute_query("""
-                        SELECT p.FULL_NAME FROM SEANCE se
-                        JOIN PROF_COURSE pc ON se.course_id = pc.course_id
-                        JOIN PROF p ON pc.prof_id = p.prof_id
-                        WHERE se.seance_id = :1
-                    """, [selected_seance_id])
+                    prof_df = execute_query("SELECT p.FULL_NAME FROM SEANCE se JOIN PROF_COURSE pc ON se.course_id = pc.course_id JOIN PROF p ON pc.prof_id = p.prof_id WHERE se.seance_id = :1", [selected_seance_id])
                     prof_name = prof_df.iloc[0]['FULL_NAME'] if not prof_df.empty else "Not Assigned"
 
                     with st.container(border=True):
                         st.markdown(f"#### Séance Profile: {selected_seance_info['Course']}")
                         c1, c2 = st.columns(2)
                         with c1:
-                            st.write(f"**Filière:** {f_name}")
-                            st.write(f"**Semestre:** {selected_sem}")
+                            st.write(f"**Filière:** {f_name_view}")
+                            st.write(f"**Semestre:** {selected_sem_view}")
                             st.write(f"**Section:** {selected_seance_info['Section Name']}")
                             st.write(f"**Professor:** {prof_name}")
                         with c2:
@@ -427,24 +500,13 @@ def display_schedule_management():
 
                     st.write("---")
                     st.write("👥 **Eligible Students for this Séance**")
-                    eligible_students_df = execute_query("""
-                        SELECT s.FULL_NAME, s.CODE_APOGE
-                        FROM STUDENT s
-                        JOIN STUDENT_SECTION ss ON s.student_id = ss.student_id
-                        WHERE ss.section_id = :1
-                        ORDER BY s.FULL_NAME
-                    """, [selected_section_id])
-                    
+                    eligible_students_df = execute_query("SELECT s.FULL_NAME, s.CODE_APOGE FROM STUDENT s JOIN STUDENT_SECTION ss ON s.student_id = ss.student_id WHERE ss.section_id = :1 ORDER BY s.FULL_NAME", [selected_section_id])
                     if not eligible_students_df.empty:
                         st.dataframe(eligible_students_df, use_container_width=True, hide_index=True)
                     else:
                         st.info("No students are assigned to this section.")
             else:
-                st.info(f"No sessions found for Filière '{f_name}' and Semestre '{selected_sem}'.")
-        else: 
-            st.info("No active semesters found for the selected Filière. Please create one.")
-    else: 
-        st.info("No filières found. Please create a Filière first.")
+                st.info(f"No sessions found for Filière '{f_name_view}' and Semestre '{selected_sem_view}'.")
 
 def display_filiere_management():
     st.subheader("🎓 Filière Management")

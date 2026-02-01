@@ -3,60 +3,78 @@ import oracledb
 import pandas as pd
 import streamlit as st
 import random
-from config import ORACLE_USER, ORACLE_PASSWORD, ORACLE_DSN
+from config import ORACLE_DSN, APP_USERS
 
-# It's best practice to create the pool once and reuse it.
-# We can store it in Streamlit's session state to avoid recreating it on every rerun.
-def init_connection_pool():
-    if "db_pool" not in st.session_state:
+# --- New Per-Role Connection Management ---
+
+def get_credentials_for_role(role: str) -> tuple[str, str]:
+    """Gets the database username and password for a given application role."""
+    role_creds = APP_USERS.get(role)
+    if not role_creds:
+        raise ValueError(f"No database credentials found for role: {role}")
+    return role_creds["user"], role_creds["pass"]
+
+def get_db_pool():
+    """
+    Dynamically gets or creates a connection pool based on the user's role.
+    The role is determined from the session_state.
+    """
+    # Default to the 'AUTH' role if no user is logged in yet.
+    user_role = st.session_state.get('user_info', {}).get('ROLE', 'AUTH')
+
+    # Initialize the dictionary of pools if it doesn't exist.
+    if 'db_pools' not in st.session_state:
+        st.session_state.db_pools = {}
+
+    # If a pool for the current role doesn't exist, create it.
+    if user_role not in st.session_state.db_pools:
         try:
+            user, password = get_credentials_for_role(user_role)
+            print(f"Creating new connection pool for role: {user_role} (DB User: {user})")
+            
             pool = oracledb.create_pool(
-                user=ORACLE_USER,
-                password=ORACLE_PASSWORD,
+                user=user,
+                password=password,
                 dsn=ORACLE_DSN,
                 min=2,
                 max=5,
                 increment=1
             )
-            st.session_state.db_pool = pool
-            print("Database connection pool created successfully.")
+            st.session_state.db_pools[user_role] = pool
         except Exception as e:
-            st.error(f"Error creating connection pool: {e}")
+            st.error(f"Fatal: Could not create database connection pool for role '{user_role}'. Error: {e}")
             st.stop()
-    return st.session_state.db_pool
-def sanitize_params(params):
-    if params is None:
-        return None
-    # Converti ay haja fiha .item() (bhal int64 dial pandas) l-Python int
-    return [int(p.item()) if hasattr(p, 'item') else p for p in params]
-# Function to execute SELECT queries and return a pandas DataFrame
+            
+    return st.session_state.db_pools[user_role]
+
+# --- Modified Core Database Functions ---
+
 def execute_query(query, params=None):
-    pool = init_connection_pool()
+    """Executes a SELECT query using the appropriate role-based connection pool."""
+    pool = get_db_pool() # Dynamically get the pool
     try:
         with pool.acquire() as connection:
             with connection.cursor() as cursor:
-                if params:
-                    cursor.execute(query, params)
-                else:
-                    cursor.execute(query)
-                
-                # Fetch column names from the cursor description
+                cursor.execute(query, params or [])
                 columns = [col[0] for col in cursor.description]
-                # Fetch all rows and create a DataFrame
                 rows = cursor.fetchall()
                 df = pd.DataFrame(rows, columns=columns)
                 return df
-    except Exception as e:
+    except oracledb.DatabaseError as e:
         st.error(f"Database query failed: {e}")
         return pd.DataFrame()
+    except Exception as e:
+        st.error(f"An unexpected error occurred: {e}")
+        return pd.DataFrame()
+
+def sanitize_params(params):
+    if params is None: return None
+    return [int(p.item()) if hasattr(p, 'item') else p for p in params]
 
 def execute_dml(dml_statement, params=None):
-    """
-    Executes a DML statement (INSERT, UPDATE, DELETE).
-    Returns a tuple (success: bool, message: str)
-    """
-    params = sanitize_params(params) # FIX HNA
-    pool = init_connection_pool()
+    """Executes a DML statement using the appropriate role-based connection pool."""
+    params = sanitize_params(params)
+    pool = get_db_pool() # Dynamically get the pool
     try:
         with pool.acquire() as connection:
             with connection.cursor() as cursor:
@@ -65,206 +83,124 @@ def execute_dml(dml_statement, params=None):
         return (True, "DML statement executed successfully.")
     except oracledb.DatabaseError as e:
         error_obj, = e.args
-        friendly_message = error_obj.message.split(':', 1)[-1].strip()
-        return (False, friendly_message)
+        return (False, f"Database error: {error_obj.message}")
     except Exception as e:
         return (False, f"An unexpected error occurred: {e}")
 
-# Function to call a stored procedure
-# Returns a tuple (success: bool, message: str)
 def call_procedure(proc_name, params=None):
-    pool = init_connection_pool()
+    """Calls a stored procedure using the appropriate role-based connection pool."""
+    pool = get_db_pool() # Dynamically get the pool
     try:
         with pool.acquire() as connection:
             with connection.cursor() as cursor:
-                if params:
-                    cursor.callproc(proc_name, params)
-                else:
-                    cursor.callproc(proc_name)
+                cursor.callproc(proc_name, params or [])
                 connection.commit()
         return (True, f"Procedure '{proc_name}' executed successfully.")
     except oracledb.DatabaseError as e:
-        # This is how we catch the custom errors from RAISE_APPLICATION_ERROR
-        error_obj, = e.args
-        # We strip the Oracle error code part (e.g., "ORA-20001: ")
-        friendly_message = error_obj.message.split(':', 1)[-1].strip()
-        return (False, friendly_message)
-    except Exception as e:
-        return (False, f"An unexpected error occurred: {e}")
-
-def create_course_with_details(course_name, filiere_id, semestre_id, capacity, prof_id, prerequisite_ids=None):
-    """
-    Creates a course, assigns a professor, and adds prerequisites in a single transaction.
-    Returns a tuple (success: bool, message: str)
-    """
-    pool = init_connection_pool()
-    connection = None
-    try:
-        connection = pool.acquire()
-        connection.begin() # Start a transaction
-        with connection.cursor() as cursor:
-            # 1. Insert the course and get its new ID
-            course_id_var = cursor.var(oracledb.NUMBER)
-            sql_insert_course = "INSERT INTO course (NAME, FILIERE_ID, SEMESTRE_ID, CAPACITY) VALUES (:1, :2, :3, :4) RETURNING COURSE_ID INTO :5"
-            cursor.execute(sql_insert_course, [course_name, filiere_id, semestre_id, capacity, course_id_var])
-            new_course_id = int(course_id_var.getvalue()[0])
-
-            # 2. Insert the professor-course link
-            sql_assign_prof = "INSERT INTO prof_course (PROF_ID, COURSE_ID) VALUES (:1, :2)"
-            cursor.execute(sql_assign_prof, [prof_id, new_course_id])
-            
-            # 3. Insert prerequisites if any are provided
-            if prerequisite_ids:
-                sql_add_prereq = "INSERT INTO course_prerequisite (COURSE_ID, PREREQUISITE_COURSE_ID) VALUES (:1, :2)"
-                # Use executemany for efficiency
-                prereq_data = [(new_course_id, int(prereq_id)) for prereq_id in prerequisite_ids]
-                cursor.executemany(sql_add_prereq, prereq_data)
-        
-        connection.commit() # Commit the transaction
-        return (True, f"Course '{course_name}' created successfully.")
-
-    except oracledb.DatabaseError as e:
-        if connection:
-            connection.rollback() # Rollback on any database error
         error_obj, = e.args
         friendly_message = error_obj.message.split(':', 1)[-1].strip()
         return (False, friendly_message)
     except Exception as e:
-        if connection:
-            connection.rollback()
         return (False, f"An unexpected error occurred: {e}")
-    finally:
-        if connection:
-            pool.release(connection)
-
-def create_new_professor(full_name, department_id, password):
-    """
-    Creates a new professor and their user account in a single transaction.
-    Returns a tuple (success: bool, message: str, new_code: str)
-    """
-    pool = init_connection_pool()
-    connection = None
-    # Generate a unique code_apoge, retry if it somehow already exists
-    for _ in range(5): # Try up to 5 times
-        try:
-            connection = pool.acquire()
-            connection.begin()
-            with connection.cursor() as cursor:
-                # 1. Generate code and insert into USER_ACCOUNT
-                new_code = f"P{random.randint(1000, 9999)}"
-                sql_user_account = "INSERT INTO USER_ACCOUNT (LOGIN_CODE, PASSWORD_HASH, ROLE) VALUES (:1, :2, :3)"
-                cursor.execute(sql_user_account, [new_code, password, 'PROF'])
-
-                # 2. Insert into PROF table
-                sql_prof = "INSERT INTO PROF (CODE_APOGE, FULL_NAME, DEPARTEMENT_ID) VALUES (:1, :2, :3)"
-                cursor.execute(sql_prof, [new_code, full_name, department_id])
-            
-            connection.commit()
-            return (True, f"Professor '{full_name}' created successfully.", new_code)
         
-        except oracledb.DatabaseError as e:
-            if connection:
-                connection.rollback()
-            error_obj, = e.args
-            # If it's a unique constraint violation on the code, the loop will retry
-            if "ORA-00001" in error_obj.message:
-                print(f"Generated code {new_code} already exists. Retrying...")
-                continue
-            friendly_message = error_obj.message.split(':', 1)[-1].strip()
-            return (False, friendly_message, None)
-        except Exception as e:
-            if connection:
-                connection.rollback()
-            return (False, f"An unexpected error occurred: {e}", None)
-        finally:
-            if connection:
-                pool.release(connection)
-    
-    # If we exit the loop
-    return (False, "Failed to generate a unique login code after several attempts.", None)
-
-
-
-
-# Function to call a stored function that returns a ref cursor
 def call_function_ref_cursor(func_name, params=None):
-    """
-    Calls a stored function that returns a SYS_REFCURSOR and returns a pandas DataFrame.
-    """
-    pool = init_connection_pool()
+    """Calls a function returning a ref cursor using the appropriate role-based pool."""
+    pool = get_db_pool() # Dynamically get the pool
     try:
         with pool.acquire() as connection:
             with connection.cursor() as cursor:
-                # For functions that RETURN a cursor, we call it directly.
-                # The list of parameters should only be the IN parameters.
                 output_cursor = cursor.callfunc(func_name, oracledb.DB_TYPE_CURSOR, params or [])
-                
-                # Fetch data from the returned ref cursor
                 columns = [col[0] for col in output_cursor.description]
                 rows = output_cursor.fetchall()
                 df = pd.DataFrame(rows, columns=columns)
                 return df
     except oracledb.DatabaseError as e:
-        # Provide more specific error info
         error_obj, = e.args
-        friendly_message = error_obj.message.split(':', 1)[-1].strip()
-        st.error(f"Database function '{func_name}' failed: {friendly_message}")
+        st.error(f"Database function '{func_name}' failed: {error_obj.message.split(':', 1)[-1].strip()}")
         return pd.DataFrame()
     except Exception as e:
         st.error(f"An unexpected error occurred calling function '{func_name}': {e}")
         return pd.DataFrame()
 
-# New function to delete a course and its related data
-def delete_course_with_details(course_id):
-    pool = init_connection_pool()
+
+# --- Admin-specific complex operations ---
+# These functions should only be callable when the user has the ADMIN role,
+# otherwise the underlying DB connection will lack permissions.
+
+def create_course_with_details(course_name, filiere_id, semestre_id, capacity, prof_id, prerequisite_ids=None):
+    pool = get_db_pool()
     connection = None
     try:
         connection = pool.acquire()
-        connection.begin() # Start a transaction
+        connection.begin()
         with connection.cursor() as cursor:
-            # 1. Delete from ATTENDANCE (indirectly via SEANCE)
-            # Find all seance_ids for the course
-            seance_ids_df = execute_query("SELECT SEANCE_ID FROM SEANCE WHERE COURSE_ID = :1", [course_id])
-            if not seance_ids_df.empty:
-                seance_ids = [s_id for s_id in seance_ids_df['SEANCE_ID'].tolist()]
-                # Construct an IN clause dynamically
-                if seance_ids: # Ensure list is not empty before using IN
-                    # oracledb automatically handles lists for IN clauses, no need to construct string
-                    # Use execute_dml directly or sanitize_params if needed
-                    placeholders = ', '.join([':' + str(i+1) for i in range(len(seance_ids))])
-                    cursor.execute(f"DELETE FROM ATTENDANCE WHERE SEANCE_ID IN ({placeholders})", seance_ids)
+            course_id_var = cursor.var(oracledb.NUMBER)
+            cursor.execute(
+                "INSERT INTO YAHYA_ADMIN.course (NAME, FILIERE_ID, SEMESTRE_ID, CAPACITY) VALUES (:1, :2, :3, :4) RETURNING COURSE_ID INTO :5",
+                [course_name, filiere_id, semestre_id, capacity, course_id_var]
+            )
+            new_course_id = int(course_id_var.getvalue()[0])
 
-
-            # 2. Delete from SEANCE
-            cursor.execute("DELETE FROM SEANCE WHERE COURSE_ID = :1", [course_id])
-            # 3. Delete from COURSE_RESULT
-            cursor.execute("DELETE FROM COURSE_RESULT WHERE COURSE_ID = :1", [course_id])
-            # 4. Delete from INSCRIPTION_REQUEST
-            cursor.execute("DELETE FROM INSCRIPTION_REQUEST WHERE COURSE_ID = :1", [course_id])
-            # 5. Delete from UNBLOCK_REQUEST
-            cursor.execute("DELETE FROM UNBLOCK_REQUEST WHERE COURSE_ID = :1", [course_id])
-            # 6. Delete from COURSE_PREREQUISITE (where it is the main course)
-            cursor.execute("DELETE FROM COURSE_PREREQUISITE WHERE COURSE_ID = :1", [course_id])
-            # 7. Delete from COURSE_PREREQUISITE (where it is a prerequisite for another course)
-            cursor.execute("DELETE FROM COURSE_PREREQUISITE WHERE PREREQUISITE_COURSE_ID = :1", [course_id])
-            # 8. Delete from PROF_COURSE
-            cursor.execute("DELETE FROM PROF_COURSE WHERE COURSE_ID = :1", [course_id])
-            # 9. Finally, delete the COURSE itself
-            cursor.execute("DELETE FROM COURSE WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("INSERT INTO YAHYA_ADMIN.prof_course (PROF_ID, COURSE_ID) VALUES (:1, :2)", [prof_id, new_course_id])
+            
+            if prerequisite_ids:
+                prereq_data = [(new_course_id, int(prereq_id)) for prereq_id in prerequisite_ids]
+                cursor.executemany("INSERT INTO YAHYA_ADMIN.course_prerequisite (COURSE_ID, PREREQUISITE_COURSE_ID) VALUES (:1, :2)", prereq_data)
         
-        connection.commit() # Commit the transaction
-        return (True, f"Course ID {course_id} and all related data deleted successfully.")
-
-    except oracledb.DatabaseError as e:
-        if connection:
-            connection.rollback() # Rollback on any database error
-        error_obj, = e.args
-        friendly_message = error_obj.message.split(':', 1)[-1].strip()
-        return (False, friendly_message)
+        connection.commit()
+        return (True, f"Course '{course_name}' created successfully.")
     except Exception as e:
-        if connection:
-            connection.rollback()
-        return (False, f"An unexpected error occurred: {e}")
+        if connection: connection.rollback()
+        return (False, str(e))
     finally:
-        if connection:
-            pool.release(connection)
+        if connection: pool.release(connection)
+
+def create_new_professor(full_name, department_id, password):
+    pool = get_db_pool()
+    connection = None
+    try:
+        connection = pool.acquire()
+        connection.begin()
+        with connection.cursor() as cursor:
+            new_code = f"P{random.randint(1000, 9999)}"
+            cursor.execute(
+                "INSERT INTO YAHYA_ADMIN.USER_ACCOUNT (LOGIN_CODE, PASSWORD_HASH, ROLE) VALUES (:1, :2, 'PROF')",
+                [new_code, password]
+            )
+            cursor.execute(
+                "INSERT INTO YAHYA_ADMIN.PROF (CODE_APOGE, FULL_NAME, DEPARTEMENT_ID) VALUES (:1, :2, :3)",
+                [new_code, full_name, department_id]
+            )
+        connection.commit()
+        return (True, f"Professor '{full_name}' created.", new_code)
+    except Exception as e:
+        if connection: connection.rollback()
+        return (False, str(e), None)
+    finally:
+        if connection: pool.release(connection)
+
+def delete_course_with_details(course_id):
+    # This function now requires high privileges and should only be run by an admin.
+    # The underlying 'app_admin' user should have DELETE rights.
+    pool = get_db_pool()
+    connection = None
+    try:
+        connection = pool.acquire()
+        connection.begin()
+        with connection.cursor() as cursor:
+            cursor.execute("DELETE FROM YAHYA_ADMIN.ATTENDANCE WHERE SEANCE_ID IN (SELECT SEANCE_ID FROM YAHYA_ADMIN.SEANCE WHERE COURSE_ID = :1)", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.SEANCE WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.COURSE_RESULT WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.INSCRIPTION_REQUEST WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.UNBLOCK_REQUEST WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.COURSE_PREREQUISITE WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.COURSE_PREREQUISITE WHERE PREREQUISITE_COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.PROF_COURSE WHERE COURSE_ID = :1", [course_id])
+            cursor.execute("DELETE FROM YAHYA_ADMIN.COURSE WHERE COURSE_ID = :1", [course_id])
+        connection.commit()
+        return (True, f"Course ID {course_id} and related data deleted.")
+    except Exception as e:
+        if connection: connection.rollback()
+        return (False, str(e))
+    finally:
+        if connection: pool.release(connection)

@@ -53,6 +53,7 @@
             padding: 1.5rem;
             border-radius: 0.75rem;
             box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+            height: 100%;
         }
         code {
             background-color: #e2e8f0;
@@ -77,56 +78,55 @@
             </div>
         </div>
 
-        <!-- Slide 2: Components Overview -->
+        <!-- Slide 2: Schema Diagram -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Schéma Relationnel</h2>
+                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">Le modèle est centré sur les entités académiques fondamentales. Les relations garantissent la cohérence et l'intégrité référentielle.</p>
+                <div class="bg-white p-4 rounded-xl shadow-2xl border border-slate-200">
+                    <img src="db.png?v=4" alt="Schéma de la base de données" class="rounded-lg object-contain w-full h-full">
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Components Overview -->
         <div class="slide">
             <div class="slide-content">
                 <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Les Composants de la Base de Données</h2>
-                <p class="text-center text-slate-600 mb-10 max-w-4xl mx-auto">L'architecture repose sur une combinaison d'objets Oracle standards, chacun ayant un rôle précis pour garantir la performance, la sécurité et l'intégrité du système.</p>
+                <p class="text-center text-slate-600 mb-10 max-w-4xl mx-auto">L'architecture repose sur une combinaison d'objets Oracle standards, chacun ayant un rôle précis.</p>
                 <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
                     <div class="card border-t-4 border-blue-500"><h3 class="font-bold text-xl mb-2">Tables</h3><p>Stockage physique des données brutes.</p></div>
                     <div class="card border-t-4 border-green-500"><h3 class="font-bold text-xl mb-2">Vues</h3><p>Couche d'abstraction pour la lecture des données.</p></div>
                     <div class="card border-t-4 border-yellow-500"><h3 class="font-bold text-xl mb-2">Triggers</h3><p>Automatisation des règles métier.</p></div>
                     <div class="card border-t-4 border-purple-500"><h3 class="font-bold text-xl mb-2">Procédures & Fonctions</h3><p>Encapsulation de la logique métier complexe.</p></div>
                     <div class="card border-t-4 border-sky-500"><h3 class="font-bold text-xl mb-2">Index</h3><p>Optimisation des performances des requêtes.</p></div>
-                    <div class="card border-t-4 border-red-500"><h3 class="font-bold text-xl mb-2">Rôles</h3><p>Gestion centralisée de la sécurité et des permissions.</p></div>
+                    <div class="card border-t-4 border-red-500"><h3 class="font-bold text-xl mb-2">Rôles & Synonymes</h3><p>Gestion de la sécurité et de l'accès aux objets.</p></div>
                 </div>
             </div>
         </div>
 
-        <!-- Slide 3: Tables -->
+        <!-- Slide 4: Tables -->
         <div class="slide">
             <div class="slide-content">
                 <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Structure des Données : Analyse des Tables</h2>
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
                     <div><h3 class="font-bold text-xl mb-3 text-blue-700">Entités de Base</h3><div class="card space-y-2">
-                        <p><b>USER_ACCOUNT</b>: Authentification</p>
-                        <p><b>STUDENT</b>: Profils étudiants</p>
-                        <p><b>PROF</b>: Profils professeurs</p>
-                        <p><b>COURSE</b>: Catalogue des cours</p>
+                        <p><b>USER_ACCOUNT</b>: Authentification</p><p><b>STUDENT</b>: Profils étudiants</p><p><b>PROF</b>: Profils professeurs</p><p><b>COURSE</b>: Catalogue des cours</p>
                     </div></div>
                     <div><h3 class="font-bold text-xl mb-3 text-green-700">Structure Académique</h3><div class="card space-y-2">
-                        <p><b>DEPARTEMENT</b>: Unités organisationnelles</p>
-                        <p><b>FILIERE</b>: Cursus/spécialisations</p>
-                        <p><b>ACADEMIC_YEAR</b>: Années académiques</p>
-                        <p><b>SEMESTRE</b>: Semestres par filière</p>
+                        <p><b>DEPARTEMENT</b>: Unités organisationnelles</p><p><b>FILIERE</b>: Cursus/spécialisations</p><p><b>ACADEMIC_YEAR</b>: Années académiques</p><p><b>SEMESTRE</b>: Semestres par filière</p>
                     </div></div>
                     <div><h3 class="font-bold text-xl mb-3 text-indigo-700">Données Opérationnelles</h3><div class="card space-y-2">
-                        <p><b>SECTION</b>: Groupes d'étudiants (TD/TP)</p>
-                        <p><b>SEANCE</b>: Sessions de cours planifiées</p>
-                        <p><b>ATTENDANCE</b>: Suivi des présences</p>
-                        <p><b>COURSE_RESULT</b>: Notes et statut final</p>
+                        <p><b>SECTION</b>: Groupes d'étudiants</p><p><b>SEANCE</b>: Sessions de cours</p><p><b>ATTENDANCE</b>: Suivi des présences</p><p><b>COURSE_RESULT</b>: Notes et statut final</p>
                     </div></div>
                     <div><h3 class="font-bold text-xl mb-3 text-yellow-600">Tables de Liaison & Audit</h3><div class="card space-y-2">
-                        <p><b>PROF_COURSE</b>: Prof ↔ Cours</p>
-                        <p><b>STUDENT_SECTION</b>: Étudiant ↔ Section</p>
-                        <p><b>INSCRIPTION_REQUEST</b>: Étudiant ↔ Cours</p>
-                        <p><b>UNBLOCK_REQUEST</b>: Piste d'audit</p>
+                        <p><b>PROF_COURSE</b>: Prof ↔ Cours</p><p><b>STUDENT_SECTION</b>: Étudiant ↔ Section</p><p><b>INSCRIPTION_REQUEST</b>: Étudiant ↔ Cours</p><p><b>UNBLOCK_REQUEST</b>: Piste d'audit</p>
                     </div></div>
                 </div>
             </div>
         </div>
         
-        <!-- Slide 4: Triggers -->
+        <!-- Slide 5: Triggers -->
         <div class="slide">
             <div class="slide-content">
                 <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Analyse Complète des Déclencheurs (Triggers)</h2>
@@ -135,112 +135,137 @@
                     <div class="card"><b class="text-blue-800">trg_max_7_courses_per_semestre:</b> Limite une filière à 7 modules/semestre.</div>
                     <div class="card"><b class="text-blue-800">trg_check_prerequisite:</b> Valide les prérequis avant inscription.</div>
                     <div class="card"><b class="text-blue-800">trg_check_seance_overlap:</b> Empêche les conflits d'horaire (salles/profs).</div>
-                    <div class="card"><b class="text-blue-800">trg_3_consecutive_absences:</b> Met le statut d'un cours à 'FAILED' pour un étudiant après 3 absences consécutives.</div>
-                    <div class="card"><b class="text-blue-800">trg_justify_absences_after_unblock:</b> Justifie les absences après un déblocage par un admin.</div>
-                    <div class="card"><b class="text-blue-800">trg_accept_inscription_init_attendance:</b> Crée automatiquement les présences 'PLANNED' à l'acceptation.</div>
-                    <div class="card bg-blue-100 border-l-4 border-blue-600"><b class="text-blue-800">trg_check_course_capacity:</b> Appelle la fonction autonome `fn_check_course_capacity` pour valider la capacité du cours et éviter l'erreur de table mutante (ORA-04091).</div>
+                    <div class="card"><b class="text-blue-800">trg_3_consecutive_absences:</b> Met le statut d'un cours à 'FAILED' après 3 absences.</div>
+                    <div class="card"><b class="text-blue-800">trg_justify_absences_after_unblock:</b> Justifie les absences après un déblocage.</div>
+                    <div class="card"><b class="text-blue-800">trg_accept_inscription_init_attendance:</b> Crée les présences 'PLANNED' à l'acceptation.</div>
+                    <div class="card bg-blue-100 border-l-4 border-blue-600"><b class="text-blue-800">trg_check_course_capacity:</b> Appelle une fonction autonome pour valider la capacité et éviter l'erreur ORA-04091.</div>
                 </div>
             </div>
         </div>
 
-        <!-- Slide 5: Views -->
+        <!-- Slide 6: Views -->
         <div class="slide">
             <div class="slide-content">
-                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Analyse Complète des Vues</h2>
-                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
-                    <div class="card">
-                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues de Synthèse (Dashboard)</h3>
-                        <ul class="text-sm list-disc list-inside space-y-1">
-                            <li><b>v_dashboard_stats:</b> Agrège les compteurs globaux pour l'accueil admin.</li>
-                            <li><b>v_course_attendance_rate:</b> Calcule le taux de présence par cours.</li>
-                            <li><b>v_students_warning:</b> Identifie les étudiants avec 2 absences ou plus.</li>
-                        </ul>
+                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Analyse Détaillée des Vues</h2>
+                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">Les vues constituent une API de données robuste, permettant à l'application Streamlit de rester simple et performante en déléguant la complexité des jointures et des calculs à la base de données.</p>
+                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 text-sm">
+                    <div class="card space-y-2">
+                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues de Synthèse & Détail (Admin)</h3>
+                        <p><b>v_dashboard_stats:</b> Fournit les 4 compteurs principaux pour l'accueil admin.</p>
+                        <p><b>v_students_warning:</b> Liste les étudiants ayant >= 2 absences dans un cours.</p>
+                        <p><b>v_course_attendance_rate:</b> Calcule le taux de présence pour chaque cours.</p>
+                        <p><b>v_detail_student:</b> Affiche le profil complet d'un étudiant avec les noms de sa filière/semestre.</p>
+                        <p><b>v_detail_departement:</b> Profil d'un département avec le total de filières/profs.</p>
+                        <p><b>v_detail_course:</b> Profil d'un cours, incluant le nom du professeur, de la filière et du semestre.</p>
+                        <p><b>v_detail_prerequisite_course:</b> Affiche les relations de prérequis entre les cours par leur nom.</p>
+                        <p><b>v_detail_filiere:</b> Montre les détails d'une filière, y compris son département et le nombre de semestres.</p>
+                        <p><b>v_detail_seance_course:</b> Affiche les informations d'une session de cours avec le nom de la section.</p>
+                        <p><b>v_detail_student_blocked:</b> Liste globale de tous les étudiants bloqués.</p>
                     </div>
-                    <div class="card">
-                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues de Détail (Simplification)</h3>
-                        <ul class="text-sm list-disc list-inside space-y-1">
-                            <li><b>v_detail_student / course / filiere / departement:</b> Dénormalisent les données en joignant les tables pour fournir une lecture simple et complète d'une entité.</li>
-                        </ul>
+                    <div class="card space-y-2">
+                        <h3 class="font-bold text-lg mb-2 text-blue-700">Vues pour le Rôle Étudiant</h3>
+                        <p><b>v_student_dashboard_summary:</b> Calcule les statistiques personnelles pour l'accueil étudiant.</p>
+                        <p><b>v_student_current_courses:</b> Liste les cours d'un étudiant et leur statut académique (VALID, FAILED...).</p>
+                        <p><b>v_student_course_seances:</b> Affiche toutes les séances possibles pour le semestre de l'étudiant.</p>
+                        <p><b>v_student_attendance:</b> Historique de présence/absence complet d'un étudiant.</p>
+                        <p><b>v_student_absence_stats:</b> Compte les absences d'un étudiant pour chaque cours.</p>
+                        <p><b>v_student_blocked_courses:</b> Liste les cours où un étudiant spécifique est bloqué.</p>
+                        <p><b>v_student_prerequisite_missing:</b> Montre à un étudiant les prérequis qui lui manquent.</p>
                     </div>
-                     <div class="card">
-                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues Spécifiques aux Rôles</h3>
-                        <ul class="text-sm list-disc list-inside space-y-1">
-                            <li><b>v_student_... (7 vues):</b> Fournissent des données personnalisées pour le dashboard étudiant (ses cours, son emploi du temps, ses absences, etc.).</li>
-                            <li><b>v_prof_... (7 vues):</b> Idem pour le dashboard professeur (ses cours, ses étudiants, ses statistiques d'absences, etc.).</li>
-                        </ul>
+                     <div class="card space-y-2">
+                        <h3 class="font-bold text-lg mb-2 text-purple-700">Vues pour le Rôle Professeur</h3>
+                        <p><b>v_prof_dashboard_summary:</b> Calcule les statistiques pour l'accueil professeur.</p>
+                        <p><b>v_prof_courses:</b> Liste les cours assignés à un professeur.</p>
+                        <p><b>v_prof_seances:</b> Affiche l'emploi du temps (toutes les séances) d'un professeur.</p>
+                        <p><b>v_prof_students_by_course:</b> Liste les étudiants acceptés dans les cours d'un professeur.</p>
+                        <p><b>v_prof_attendance_by_seance:</b> Permet de voir le statut de présence pour une séance donnée.</p>
+                        <p><b>v_prof_absence_stats:</b> Calcule les statistiques d'absence au niveau du cours.</p>
+                        <p><b>v_prof_blocked_students:</b> Liste les étudiants qui sont bloqués dans les cours d'un professeur.</p>
                     </div>
                 </div>
-                <p class="text-center text-slate-600 mt-8 max-w-4xl mx-auto">Ces vues constituent une API de données robuste, permettant à l'application Streamlit de rester simple et performante en déléguant la complexité des jointures et des calculs à la base de données.</p>
             </div>
         </div>
         
-        <!-- Slide 6: Procedures & Functions -->
+        <!-- Slide 7: Procedures & Functions -->
         <div class="slide">
             <div class="slide-content">
                 <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Logique Métier Avancée : Procédures & Fonctions</h2>
                 <div class="bg-white p-8 rounded-lg shadow-xl space-y-6">
-                    <div>
-                        <h3 class="font-semibold text-xl text-indigo-800">`fn_check_course_capacity` & `PRAGMA AUTONOMOUS_TRANSACTION`</h3>
-                        <p class="text-slate-700 mt-1">Solution à l'erreur ORA-04091. Le pragma crée une transaction indépendante pour lire l'état de la table `INSCRIPTION_REQUEST` sans conflit avec la transaction `UPDATE` parente qui l'a déclenchée.</p>
-                    </div>
-                    <hr/>
-                    <div>
-                        <h3 class="font-semibold text-xl text-indigo-800">Fonctions retournant `SYS_REFCURSOR`</h3>
-                        <p class="text-slate-700 mt-1">Utilisées pour passer des ensembles de résultats du monde PL/SQL à Python. `fn_student_courses`, etc., renvoient des pointeurs de données que le driver `oracledb` lit efficacement pour construire des DataFrames Pandas.</p>
-                    </div>
-                    <hr/>
-                    <div>
-                        <h3 class="font-semibold text-xl text-indigo-800">Procédures Transactionnelles (`admin_unblock_student`)</h3>
-                        <p class="text-slate-700 mt-1">Encapsulent des opérations multi-étapes en une seule unité atomique. `admin_unblock_student`, par exemple, valide les données, insère une trace d'audit, et met à jour le statut de l'étudiant.</p>
-                    </div>
+                    <div><h3 class="font-semibold text-xl text-indigo-800">`fn_check_course_capacity` & `PRAGMA AUTONOMOUS_TRANSACTION`</h3><p class="text-slate-700 mt-1">Solution à l'erreur ORA-04091. Le pragma crée une transaction indépendante pour lire l'état de la table `INSCRIPTION_REQUEST` sans conflit avec la transaction `UPDATE` parente.</p></div> <hr/>
+                    <div><h3 class="font-semibold text-xl text-indigo-800">Fonctions retournant `SYS_REFCURSOR`</h3><p class="text-slate-700 mt-1">Utilisées comme pont performant entre PL/SQL et Python, elles renvoient un pointeur vers un ensemble de résultats que le driver `oracledb` lit efficacement pour construire un DataFrame.</p></div><hr/>
+                    <div><h3 class="font-semibold text-xl text-indigo-800">Procédures Transactionnelles (`admin_unblock_student`)</h3><p class="text-slate-700 mt-1">Encapsulent des opérations multi-étapes (validation, audit, mise à jour) en une seule unité atomique et sécurisée.</p></div>
                 </div>
             </div>
         </div>
 
-        <!-- NEW Slide 7: Security Deep Dive -->
+        <!-- Slide 8: Security Architecture -->
         <div class="slide">
             <div class="slide-content">
-                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Analyse de `security.sql` : Le Modèle de Rôles</h2>
-                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">La sécurité est gérée via un modèle de rôles, garantissant que chaque utilisateur dispose uniquement des permissions nécessaires à ses fonctions (Principe du moindre privilège).</p>
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">1. Propriétaire</h3><p class="text-sm mt-1">L'utilisateur <code>YAHYA_ADMIN</code> est créé comme propriétaire de tous les objets (schéma applicatif).</p></div>
-                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">2. Rôles</h3><p class="text-sm mt-1">Création de 3 rôles : <code>ROLE_ADMIN</code>, <code>ROLE_PROF</code>, <code>ROLE_STUDENT</code>.</p></div>
-                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">3. Permissions</h3><p class="text-sm mt-1">Des privilèges spécifiques (<code>SELECT</code>, <code>UPDATE</code>, <code>EXECUTE</code>) sont accordés à chaque rôle sur les tables, vues et procédures.</p></div>
-                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">4. Utilisateurs</h3><p class="text-sm mt-1">Des utilisateurs de test (<code>PROF_USER</code>, <code>STUDENT_USER</code>) se voient attribuer ces rôles pour la validation.</p></div>
-                </div>
-                 <div class="mt-6 bg-gray-900 text-white p-4 rounded-lg text-sm font-mono">
-                    <p class="text-gray-400">-- Exemple : Un étudiant peut seulement demander une inscription, pas la valider.</p>
-                    <p><span class="text-purple-400">GRANT INSERT</span> ON <span class="text-green-400">inscription_request</span> TO <span class="text-yellow-400">role_student</span>;</p>
-                    <p class="text-gray-400 mt-2">-- Exemple : Un professeur peut voir les vues qui le concernent.</p>
-                    <p><span class="text-purple-400">GRANT SELECT</span> ON <span class="text-green-400">v_prof_courses</span> TO <span class="text-yellow-400">role_prof</span>;</p>
+                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Architecture de Sécurité Complète</h2>
+                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">Le système implémente une sécurité multi-niveaux ("Defense-in-Depth") en combinant un modèle de rôles dans la base de données avec une logique de connexion applicative intelligente.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                    <div class="card bg-slate-50">
+                        <h3 class="font-bold text-xl mb-3 text-slate-800">Partie 1 : La Fondation (`security.sql`)</h3>
+                        <p class="text-sm mb-4">Le script établit un périmètre de sécurité robuste dans la base de données en 6 étapes :</p>
+                        <ol class="text-sm space-y-2">
+                           <li><b>1. Nettoyage:</b> Supprime les anciens objets pour un état de départ propre.</li>
+                           <li><b>2. Utilisateurs Applicatifs:</b> Crée des comptes DB à faibles privilèges (<code>app_student</code>, etc.).</li>
+                           <li><b>3. Rôles:</b> Définit des "modèles" de permissions (<code>ROLE_STUDENT</code>, etc.).</li>
+                           <li><b>4. Privilèges:</b> Accorde des permissions granulaires aux rôles (<code>GRANT SELECT...</code>).</li>
+                           <li><b>5. Assignation:</b> Lie chaque utilisateur à son rôle (<code>GRANT ROLE_STUDENT TO app_student</code>).</li>
+                           <li><b>6. Synonymes:</b> Crée des alias publics pour tous les objets (résout `ORA-00942`).</li>
+                        </ol>
+                    </div>
+                    <div class="card">
+                        <h3 class="font-bold text-xl mb-3 text-slate-800">Partie 2 : Le Flux de Connexion par Rôle</h3>
+                        <p class="text-sm mb-4">L'application applique dynamiquement ce modèle à chaque connexion :</p>
+                        <ol class="relative border-l border-gray-200 text-sm">                  
+                            <li class="mb-4 ml-4"><div class="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -left-1.5 border border-white"></div><h4 class="font-semibold">1. Authentification</h4><p class="text-gray-600">L'application se connecte via <code>app_auth</code> (lecture seule de <code>USER_ACCOUNT</code>).</p></li>
+                            <li class="mb-4 ml-4"><div class="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -left-1.5 border border-white"></div><h4 class="font-semibold">2. Récupération du Rôle</h4><p class="text-gray-600">La DB retourne le rôle de l'utilisateur (ex: 'STUDENT').</p></li>
+                            <li class="mb-4 ml-4"><div class="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -left-1.5 border border-white"></div><h4 class="font-semibold">3. Sélection du Pool</h4><p class="text-gray-600"><code>db_utils.py</code> choisit le pool de connexion pour l'utilisateur <code>app_student</code>.</p></li>
+                             <li class="ml-4"><div class="absolute w-3 h-3 bg-gray-200 rounded-full mt-1.5 -left-1.5 border border-white"></div><h4 class="font-semibold">4. Exécution Sécurisée</h4><p class="text-gray-600">Les requêtes sont exécutées par <code>app_student</code>, dont les droits sont limités par <code>ROLE_STUDENT</code>, au niveau de la base de données.</p></li>
+                        </ol>
+                    </div>
                 </div>
             </div>
         </div>
 
-        <!-- NEW Slide 8: Connection Architecture -->
+        <!-- Slide 9: Role & Privilege Definitions -->
         <div class="slide">
             <div class="slide-content">
-                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Architecture de Connexion & Sécurité</h2>
-                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">Comprendre comment l'application se connecte à la base de données est essentiel pour évaluer le niveau de sécurité global.</p>
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-                    <div class="card border-l-4 border-orange-500">
-                        <h3 class="font-bold text-xl mb-2">Modèle Actuel : Connexion Partagée</h3>
-                        <p class="text-slate-600">L'application Streamlit se connecte <b class="font-semibold">toujours</b> à la base de données avec l'utilisateur-propriétaire <code>YAHYA_ADMIN</code>, qui a tous les droits.</p>
-                        <p class="mt-3 text-sm"><b>Processus :</b> App → Connexion (Full Power) → Authentification Python → Logique Python</p>
-                        <p class="mt-4 font-semibold">Avantage : Simple à implémenter.</p>
-                        <p class="font-semibold text-orange-700">Inconvénient : La sécurité repose entièrement sur la couche applicative (Python). Une faille dans l'application pourrait potentiellement exposer toutes les données, car la connexion sous-jacente est surpuissante.</p>
+                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Définition des Rôles et Privilèges</h2>
+                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">Chaque rôle se voit accorder le minimum de privilèges nécessaires pour accomplir ses tâches.</p>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div class="card border-t-4 border-green-500">
+                        <h3 class="font-bold text-xl mb-3 text-green-700">ROLE_STUDENT</h3>
+                        <p class="font-semibold text-sm mb-2">Permissions principales :</p>
+                        <ul class="text-sm space-y-1 list-disc list-inside">
+                            <li><b>LIRE</b> ses propres données via les vues <code>v_student_*</code> et les tables de base.</li>
+                            <li><b>INSÉRER</b> dans <code>inscription_request</code> et <code>student_section</code>.</li>
+                            <li><b>METTRE À JOUR</b> uniquement son mot de passe.</li>
+                        </ul>
                     </div>
-                     <div class="card border-l-4 border-green-500">
-                        <h3 class="font-bold text-xl mb-2">Modèle Recommandé : Connexion par Rôle</h3>
-                        <p class="text-slate-600">L'application gère plusieurs pools de connexion, un pour chaque rôle (<code>STUDENT_USER</code>, <code>PROF_USER</code>, etc.).</p>
-                        <p class="mt-3 text-sm"><b>Processus :</b> App → Authentification Python → Sélection du Pool de Connexion (privilèges limités) → Requêtes sécurisées</p>
-                        <p class="mt-4 font-semibold">Avantage : Sécurité en profondeur. La base de données elle-même empêche un utilisateur d'accéder à des données non autorisées, même en cas de bug applicatif.</p>
-                        <p class="font-semibold text-green-700">Inconvénient : Plus complexe à gérer dans le code de l'application (`db_utils.py`).</p>
+                    <div class="card border-t-4 border-blue-500">
+                        <h3 class="font-bold text-xl mb-3 text-blue-700">ROLE_PROF</h3>
+                        <p class="font-semibold text-sm mb-2">Permissions principales :</p>
+                        <ul class="text-sm space-y-1 list-disc list-inside">
+                            <li><b>LIRE</b> les données de ses cours et étudiants via les vues <code>v_prof_*</code>.</li>
+                            <li><b>METTRE À JOUR</b> <code>attendance</code> et <code>inscription_request</code>.</li>
+                            <li><b>EXÉCUTER</b> la procédure de soumission des notes <code>sp_prof_submit_grade</code>.</li>
+                        </ul>
+                    </div>
+                    <div class="card border-t-4 border-red-500">
+                        <h3 class="font-bold text-xl mb-3 text-red-700">ROLE_ADMIN</h3>
+                        <p class="font-semibold text-sm mb-2">Permissions principales :</p>
+                        <ul class="text-sm space-y-1 list-disc list-inside">
+                            <li><b>CONTRÔLE TOTAL (CRUD)</b> sur toutes les tables de l'application.</li>
+                            <li><b>LIRE (SELECT)</b> toutes les vues pour une supervision complète.</li>
+                        </ul>
                     </div>
                 </div>
             </div>
         </div>
-
+    
     </div>
 
     <!-- Navigation Buttons -->
