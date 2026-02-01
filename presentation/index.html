@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Architecture Détaillée de la Base de Données</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://rsms.me/inter/inter.css');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f1f5f9; /* slate-100 */
+        }
+        .slide {
+            min-height: 100vh;
+            display: none; /* Hide all slides by default */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            padding: 2rem 4rem;
+            position: absolute;
+            width: 100%;
+            top: 0;
+            left: 0;
+            opacity: 0;
+            transition: opacity 0.7s ease-in-out;
+        }
+        .slide.active {
+            display: flex; /* Show active slide */
+            opacity: 1;
+        }
+        .slide-content {
+            max-width: 1200px;
+            width: 100%;
+        }
+        .button-nav {
+            background-color: #fff;
+            color: #0f172a; /* slate-900 */
+            font-weight: 600;
+            padding: 0.75rem 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
+            transition: all 0.2s;
+        }
+        .button-nav:hover {
+            background-color: #0f172a; /* slate-900 */
+            color: #fff;
+            transform: translateY(-2px);
+            box-shadow: 0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1);
+        }
+        .card {
+            background-color: white;
+            padding: 1.5rem;
+            border-radius: 0.75rem;
+            box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.05), 0 2px 4px -2px rgb(0 0 0 / 0.05);
+        }
+        code {
+            background-color: #e2e8f0;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.25rem;
+            font-family: monospace;
+            font-size: 0.9em;
+        }
+    </style>
+</head>
+<body class="text-slate-800">
+
+    <!-- Slides Container -->
+    <div id="presentation-container">
+
+        <!-- Slide 1: Title -->
+        <div class="slide active">
+            <div class="slide-content text-center">
+                <span class="text-base font-bold tracking-wider text-blue-600 uppercase">Architecture de Base de Données</span>
+                <h1 class="mt-4 text-5xl font-extrabold text-slate-900 tracking-tight lg:text-6xl">Système Avancé d'Inscription aux Cours</h1>
+                <p class="mt-6 text-xl text-slate-600 max-w-3xl mx-auto">Analyse exhaustive de tous les composants de la base de données : structure, logique, sécurité et performance.</p>
+            </div>
+        </div>
+
+        <!-- Slide 2: Components Overview -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Les Composants de la Base de Données</h2>
+                <p class="text-center text-slate-600 mb-10 max-w-4xl mx-auto">L'architecture repose sur une combinaison d'objets Oracle standards, chacun ayant un rôle précis pour garantir la performance, la sécurité et l'intégrité du système.</p>
+                <div class="grid grid-cols-2 lg:grid-cols-3 gap-6">
+                    <div class="card border-t-4 border-blue-500"><h3 class="font-bold text-xl mb-2">Tables</h3><p>Stockage physique des données brutes.</p></div>
+                    <div class="card border-t-4 border-green-500"><h3 class="font-bold text-xl mb-2">Vues</h3><p>Couche d'abstraction pour la lecture des données.</p></div>
+                    <div class="card border-t-4 border-yellow-500"><h3 class="font-bold text-xl mb-2">Triggers</h3><p>Automatisation des règles métier.</p></div>
+                    <div class="card border-t-4 border-purple-500"><h3 class="font-bold text-xl mb-2">Procédures & Fonctions</h3><p>Encapsulation de la logique métier complexe.</p></div>
+                    <div class="card border-t-4 border-sky-500"><h3 class="font-bold text-xl mb-2">Index</h3><p>Optimisation des performances des requêtes.</p></div>
+                    <div class="card border-t-4 border-red-500"><h3 class="font-bold text-xl mb-2">Rôles</h3><p>Gestion centralisée de la sécurité et des permissions.</p></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 3: Tables -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Structure des Données : Analyse des Tables</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
+                    <div><h3 class="font-bold text-xl mb-3 text-blue-700">Entités de Base</h3><div class="card space-y-2">
+                        <p><b>USER_ACCOUNT</b>: Authentification</p>
+                        <p><b>STUDENT</b>: Profils étudiants</p>
+                        <p><b>PROF</b>: Profils professeurs</p>
+                        <p><b>COURSE</b>: Catalogue des cours</p>
+                    </div></div>
+                    <div><h3 class="font-bold text-xl mb-3 text-green-700">Structure Académique</h3><div class="card space-y-2">
+                        <p><b>DEPARTEMENT</b>: Unités organisationnelles</p>
+                        <p><b>FILIERE</b>: Cursus/spécialisations</p>
+                        <p><b>ACADEMIC_YEAR</b>: Années académiques</p>
+                        <p><b>SEMESTRE</b>: Semestres par filière</p>
+                    </div></div>
+                    <div><h3 class="font-bold text-xl mb-3 text-indigo-700">Données Opérationnelles</h3><div class="card space-y-2">
+                        <p><b>SECTION</b>: Groupes d'étudiants (TD/TP)</p>
+                        <p><b>SEANCE</b>: Sessions de cours planifiées</p>
+                        <p><b>ATTENDANCE</b>: Suivi des présences</p>
+                        <p><b>COURSE_RESULT</b>: Notes et statut final</p>
+                    </div></div>
+                    <div><h3 class="font-bold text-xl mb-3 text-yellow-600">Tables de Liaison & Audit</h3><div class="card space-y-2">
+                        <p><b>PROF_COURSE</b>: Prof ↔ Cours</p>
+                        <p><b>STUDENT_SECTION</b>: Étudiant ↔ Section</p>
+                        <p><b>INSCRIPTION_REQUEST</b>: Étudiant ↔ Cours</p>
+                        <p><b>UNBLOCK_REQUEST</b>: Piste d'audit</p>
+                    </div></div>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Slide 4: Triggers -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Analyse Complète des Déclencheurs (Triggers)</h2>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+                    <div class="card"><b class="text-blue-800">trg_prof_max_3_courses:</b> Limite un prof à 3 modules/an.</div>
+                    <div class="card"><b class="text-blue-800">trg_max_7_courses_per_semestre:</b> Limite une filière à 7 modules/semestre.</div>
+                    <div class="card"><b class="text-blue-800">trg_check_prerequisite:</b> Valide les prérequis avant inscription.</div>
+                    <div class="card"><b class="text-blue-800">trg_check_seance_overlap:</b> Empêche les conflits d'horaire (salles/profs).</div>
+                    <div class="card"><b class="text-blue-800">trg_3_consecutive_absences:</b> Met le statut d'un cours à 'FAILED' pour un étudiant après 3 absences consécutives.</div>
+                    <div class="card"><b class="text-blue-800">trg_justify_absences_after_unblock:</b> Justifie les absences après un déblocage par un admin.</div>
+                    <div class="card"><b class="text-blue-800">trg_accept_inscription_init_attendance:</b> Crée automatiquement les présences 'PLANNED' à l'acceptation.</div>
+                    <div class="card bg-blue-100 border-l-4 border-blue-600"><b class="text-blue-800">trg_check_course_capacity:</b> Appelle la fonction autonome `fn_check_course_capacity` pour valider la capacité du cours et éviter l'erreur de table mutante (ORA-04091).</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Slide 5: Views -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Analyse Complète des Vues</h2>
+                 <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div class="card">
+                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues de Synthèse (Dashboard)</h3>
+                        <ul class="text-sm list-disc list-inside space-y-1">
+                            <li><b>v_dashboard_stats:</b> Agrège les compteurs globaux pour l'accueil admin.</li>
+                            <li><b>v_course_attendance_rate:</b> Calcule le taux de présence par cours.</li>
+                            <li><b>v_students_warning:</b> Identifie les étudiants avec 2 absences ou plus.</li>
+                        </ul>
+                    </div>
+                    <div class="card">
+                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues de Détail (Simplification)</h3>
+                        <ul class="text-sm list-disc list-inside space-y-1">
+                            <li><b>v_detail_student / course / filiere / departement:</b> Dénormalisent les données en joignant les tables pour fournir une lecture simple et complète d'une entité.</li>
+                        </ul>
+                    </div>
+                     <div class="card">
+                        <h3 class="font-bold text-lg mb-2 text-green-700">Vues Spécifiques aux Rôles</h3>
+                        <ul class="text-sm list-disc list-inside space-y-1">
+                            <li><b>v_student_... (7 vues):</b> Fournissent des données personnalisées pour le dashboard étudiant (ses cours, son emploi du temps, ses absences, etc.).</li>
+                            <li><b>v_prof_... (7 vues):</b> Idem pour le dashboard professeur (ses cours, ses étudiants, ses statistiques d'absences, etc.).</li>
+                        </ul>
+                    </div>
+                </div>
+                <p class="text-center text-slate-600 mt-8 max-w-4xl mx-auto">Ces vues constituent une API de données robuste, permettant à l'application Streamlit de rester simple et performante en déléguant la complexité des jointures et des calculs à la base de données.</p>
+            </div>
+        </div>
+        
+        <!-- Slide 6: Procedures & Functions -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-8 text-center text-slate-900">Logique Métier Avancée : Procédures & Fonctions</h2>
+                <div class="bg-white p-8 rounded-lg shadow-xl space-y-6">
+                    <div>
+                        <h3 class="font-semibold text-xl text-indigo-800">`fn_check_course_capacity` & `PRAGMA AUTONOMOUS_TRANSACTION`</h3>
+                        <p class="text-slate-700 mt-1">Solution à l'erreur ORA-04091. Le pragma crée une transaction indépendante pour lire l'état de la table `INSCRIPTION_REQUEST` sans conflit avec la transaction `UPDATE` parente qui l'a déclenchée.</p>
+                    </div>
+                    <hr/>
+                    <div>
+                        <h3 class="font-semibold text-xl text-indigo-800">Fonctions retournant `SYS_REFCURSOR`</h3>
+                        <p class="text-slate-700 mt-1">Utilisées pour passer des ensembles de résultats du monde PL/SQL à Python. `fn_student_courses`, etc., renvoient des pointeurs de données que le driver `oracledb` lit efficacement pour construire des DataFrames Pandas.</p>
+                    </div>
+                    <hr/>
+                    <div>
+                        <h3 class="font-semibold text-xl text-indigo-800">Procédures Transactionnelles (`admin_unblock_student`)</h3>
+                        <p class="text-slate-700 mt-1">Encapsulent des opérations multi-étapes en une seule unité atomique. `admin_unblock_student`, par exemple, valide les données, insère une trace d'audit, et met à jour le statut de l'étudiant.</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW Slide 7: Security Deep Dive -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Analyse de `security.sql` : Le Modèle de Rôles</h2>
+                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">La sécurité est gérée via un modèle de rôles, garantissant que chaque utilisateur dispose uniquement des permissions nécessaires à ses fonctions (Principe du moindre privilège).</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">1. Propriétaire</h3><p class="text-sm mt-1">L'utilisateur <code>YAHYA_ADMIN</code> est créé comme propriétaire de tous les objets (schéma applicatif).</p></div>
+                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">2. Rôles</h3><p class="text-sm mt-1">Création de 3 rôles : <code>ROLE_ADMIN</code>, <code>ROLE_PROF</code>, <code>ROLE_STUDENT</code>.</p></div>
+                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">3. Permissions</h3><p class="text-sm mt-1">Des privilèges spécifiques (<code>SELECT</code>, <code>UPDATE</code>, <code>EXECUTE</code>) sont accordés à chaque rôle sur les tables, vues et procédures.</p></div>
+                    <div class="card bg-slate-50"><h3 class="font-bold text-lg">4. Utilisateurs</h3><p class="text-sm mt-1">Des utilisateurs de test (<code>PROF_USER</code>, <code>STUDENT_USER</code>) se voient attribuer ces rôles pour la validation.</p></div>
+                </div>
+                 <div class="mt-6 bg-gray-900 text-white p-4 rounded-lg text-sm font-mono">
+                    <p class="text-gray-400">-- Exemple : Un étudiant peut seulement demander une inscription, pas la valider.</p>
+                    <p><span class="text-purple-400">GRANT INSERT</span> ON <span class="text-green-400">inscription_request</span> TO <span class="text-yellow-400">role_student</span>;</p>
+                    <p class="text-gray-400 mt-2">-- Exemple : Un professeur peut voir les vues qui le concernent.</p>
+                    <p><span class="text-purple-400">GRANT SELECT</span> ON <span class="text-green-400">v_prof_courses</span> TO <span class="text-yellow-400">role_prof</span>;</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- NEW Slide 8: Connection Architecture -->
+        <div class="slide">
+            <div class="slide-content">
+                <h2 class="text-4xl font-bold mb-6 text-center text-slate-900">Architecture de Connexion & Sécurité</h2>
+                <p class="text-center text-slate-600 mb-8 max-w-4xl mx-auto">Comprendre comment l'application se connecte à la base de données est essentiel pour évaluer le niveau de sécurité global.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+                    <div class="card border-l-4 border-orange-500">
+                        <h3 class="font-bold text-xl mb-2">Modèle Actuel : Connexion Partagée</h3>
+                        <p class="text-slate-600">L'application Streamlit se connecte <b class="font-semibold">toujours</b> à la base de données avec l'utilisateur-propriétaire <code>YAHYA_ADMIN</code>, qui a tous les droits.</p>
+                        <p class="mt-3 text-sm"><b>Processus :</b> App → Connexion (Full Power) → Authentification Python → Logique Python</p>
+                        <p class="mt-4 font-semibold">Avantage : Simple à implémenter.</p>
+                        <p class="font-semibold text-orange-700">Inconvénient : La sécurité repose entièrement sur la couche applicative (Python). Une faille dans l'application pourrait potentiellement exposer toutes les données, car la connexion sous-jacente est surpuissante.</p>
+                    </div>
+                     <div class="card border-l-4 border-green-500">
+                        <h3 class="font-bold text-xl mb-2">Modèle Recommandé : Connexion par Rôle</h3>
+                        <p class="text-slate-600">L'application gère plusieurs pools de connexion, un pour chaque rôle (<code>STUDENT_USER</code>, <code>PROF_USER</code>, etc.).</p>
+                        <p class="mt-3 text-sm"><b>Processus :</b> App → Authentification Python → Sélection du Pool de Connexion (privilèges limités) → Requêtes sécurisées</p>
+                        <p class="mt-4 font-semibold">Avantage : Sécurité en profondeur. La base de données elle-même empêche un utilisateur d'accéder à des données non autorisées, même en cas de bug applicatif.</p>
+                        <p class="font-semibold text-green-700">Inconvénient : Plus complexe à gérer dans le code de l'application (`db_utils.py`).</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Navigation Buttons -->
+    <div class="fixed bottom-8 w-full flex justify-center space-x-4">
+        <button id="prevBtn" class="button-nav">‹ Précédent</button>
+        <button id="nextBtn" class="button-nav">Suivant ›</button>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            const slides = document.querySelectorAll('.slide');
+            let currentSlide = 0;
+
+            function showSlide(n) {
+                slides.forEach((slide, index) => {
+                    slide.style.zIndex = (index === n) ? 10 : 0;
+                    if (index === n) {
+                        slide.classList.add('active');
+                    } else {
+                        slide.classList.remove('active');
+                    }
+                });
+            }
+
+            function nextSlide() {
+                currentSlide = (currentSlide + 1) % slides.length;
+                showSlide(currentSlide);
+            }
+
+            function prevSlide() {
+                currentSlide = (currentSlide - 1 + slides.length) % slides.length;
+                showSlide(currentSlide);
+            }
+
+            document.getElementById('nextBtn').addEventListener('click', nextSlide);
+            document.getElementById('prevBtn').addEventListener('click', prevSlide);
+
+            document.addEventListener('keydown', (e) => {
+                if (e.key === 'ArrowRight') nextSlide();
+                if (e.key === 'ArrowLeft') prevSlide();
+            });
+
+            showSlide(currentSlide); // Show the first slide initially
+        });
+    </script>
+</body>
+</html>
