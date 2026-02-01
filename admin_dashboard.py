@@ -134,245 +134,125 @@ def display_student_management():
 def display_course_management():
     st.subheader("📖 Course Management")
     
-    # 1. Form: Create New Course
-    with st.expander("➕ Create New Course", expanded=False):
-        filieres_df = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
-        if not filieres_df.empty:
-            selected_filiere = st.selectbox("Select Filiere", filieres_df['NAME'], key="add_c_filiere")
-            f_id = filieres_df[filieres_df['NAME'] == selected_filiere]['FILIERE_ID'].values[0].item()
+    # 1. Form to add a new course
+    with st.expander("➕ Add New Course", expanded=False):
+        # (The form to add a course remains unchanged)
+        filieres_df_form = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
+        if not filieres_df_form.empty:
+            selected_filiere_form = st.selectbox("Select Filiere", filieres_df_form['NAME'], key="add_c_filiere")
+            f_id_form = filieres_df_form[filieres_df_form['NAME'] == selected_filiere_form]['FILIERE_ID'].values[0].item()
             
-            col1, col2 = st.columns(2)
-            c_name = col1.text_input("Course Name")
-            capacity = col1.number_input("Capacity", min_value=1, value=30)
+            col1_form, col2_form = st.columns(2)
+            c_name_form = col1_form.text_input("Course Name")
+            capacity_form = col1_form.number_input("Capacity", min_value=1, value=30)
             
-            # Filter semesters by Latest Year
-            sem_query = """
-                SELECT s.SEMESTRE_ID, s.CODE, s.YEAR_ID, s.CODE || ' (' || ay.LABEL || ')' as DISP 
-                FROM SEMESTRE s JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
-                WHERE s.FILIERE_ID = :1 AND s.YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)
-            """
-            sems = execute_query(sem_query, [int(f_id)])
-            selected_sem_display = col2.selectbox("Semestre", sems['DISP'] if not sems.empty else [])
+            sem_query_form = "SELECT s.SEMESTRE_ID, s.CODE, s.YEAR_ID, s.CODE || ' (' || ay.LABEL || ')' as DISP FROM SEMESTRE s JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID WHERE s.FILIERE_ID = :1 AND s.YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)"
+            sems_form = execute_query(sem_query_form, [int(f_id_form)])
+            selected_sem_display_form = col2_form.selectbox("Semestre", sems_form['DISP'] if not sems_form.empty else [])
             
-            # Extract current_sem_id and current_sem_code, and its numeric part, from the selected display value
-            if not sems.empty and selected_sem_display:
-                current_sem_id = int(sems[sems['DISP'] == selected_sem_display]['SEMESTRE_ID'].values[0])
-                current_sem_code_str = sems[sems['DISP'] == selected_sem_display]['CODE'].values[0]
-                # Extract numeric part for comparison, assuming format 'S<number>'
-                current_sem_code_numeric = int(current_sem_code_str[1:])
-            else:
-                current_sem_id = None
-                current_sem_code_str = None
-                current_sem_code_numeric = None
-
-            # Prerequisites: Only from previous semesters
-            selected_prereqs = []
-            if not sems.empty and selected_sem_display and current_sem_id is not None: # Check if semester is selected and valid
-                # current_sem_id, current_sem_code_str, current_sem_code_numeric are already derived
+            if not sems_form.empty and selected_sem_display_form:
+                current_sem_id_form = int(sems_form[sems_form['DISP'] == selected_sem_display_form]['SEMESTRE_ID'].values[0])
+                current_year_id_form = int(sems_form[sems_form['DISP'] == selected_sem_display_form]['YEAR_ID'].values[0])
                 
-                # We need current_year_id to filter prerequisites and professors
-                # This information is already available in the `sems` DataFrame as `YEAR_ID` for the `current_sem_id`
-                # Find the row in `sems` that matches `current_sem_id`
-                current_sem_info = sems[sems['SEMESTRE_ID'] == current_sem_id]
-                if not current_sem_info.empty:
-                    current_year_id = int(current_sem_info.iloc[0]['YEAR_ID'])
-                    # Fetch target academic year's start date
-                    target_ay_df = execute_query("SELECT START_DATE FROM ACADEMIC_YEAR WHERE YEAR_ID = :1", [int(current_year_id)])
-                    if not target_ay_df.empty:
-                        target_ay_start_date = target_ay_df.iloc[0]['START_DATE']
-                    else:
-                        st.error("Could not retrieve target academic year start date.")
-                        target_ay_start_date = None
-                else:
-                    st.error("Could not retrieve current year information for selected semester.")
-                    current_year_id = None # Ensure it's None if not found
-                    target_ay_start_date = None
-
-                if current_year_id is not None and target_ay_start_date is not None:
-                    # Professors filtering: show only those with < 3 courses in the current academic year
-                    prof_query = """
-                        SELECT 
-                            p.PROF_ID, 
-                            p.FULL_NAME
-                        FROM PROF p
-                        LEFT JOIN PROF_COURSE pc ON p.PROF_ID = pc.PROF_ID
-                        LEFT JOIN COURSE c ON pc.COURSE_ID = c.COURSE_ID
-                        LEFT JOIN SEMESTRE s ON c.SEMESTRE_ID = s.SEMESTRE_ID
-                        WHERE p.DEPARTEMENT_ID = (SELECT DEPARTEMENT_ID FROM FILIERE WHERE FILIERE_ID = :1)
-                        GROUP BY p.PROF_ID, p.FULL_NAME
-                        HAVING COUNT(CASE WHEN s.YEAR_ID = :2 THEN pc.COURSE_ID END) < 3
-                        OR COUNT(pc.COURSE_ID) = 0 -- Include professors with no assigned courses
-                        ORDER BY p.FULL_NAME
-                    """
-                    profs = execute_query(prof_query, [int(f_id), int(current_year_id)])
-                    selected_prof = col2.selectbox("Assign Professor", profs['FULL_NAME'] if not profs.empty else [])
-
-                    prereqs_df = execute_query("""
-                        SELECT
-                            c.COURSE_ID,
-                            c.NAME || ' - ' || cs.CODE || ' (' || ay.LABEL || ')' AS DISPLAY_NAME
-                        FROM
-                            COURSE c
-                        JOIN
-                            SEMESTRE cs ON c.SEMESTRE_ID = cs.SEMESTRE_ID
-                        JOIN
-                            ACADEMIC_YEAR ay ON cs.YEAR_ID = ay.YEAR_ID
-                        WHERE
-                            c.FILIERE_ID = :1 -- Same filiere
-                            AND (
-                                ay.START_DATE < :2 -- Any previous Academic Year
-                                OR (
-                                    ay.START_DATE = :3 -- Current Academic Year
-                                    AND TO_NUMBER(SUBSTR(cs.CODE, 2)) < :4 -- strictly lower semester number
-                                )
-                            )
-                        ORDER BY
-                            ay.LABEL DESC, TO_NUMBER(SUBSTR(cs.CODE, 2)) DESC
-                    """, [int(f_id), target_ay_start_date, target_ay_start_date, current_sem_code_numeric])
-                    selected_prereqs_display = st.multiselect("Prerequisites (Optional)", prereqs_df['DISPLAY_NAME'] if not prereqs_df.empty else [])
-                else:
-                    st.info("Select a valid semester to view prerequisites and assign a professor.")
-            else:
-                st.info("Select a semester to view prerequisites and assign a professor.")
+                prof_query_form = "SELECT p.PROF_ID, p.FULL_NAME FROM PROF p LEFT JOIN PROF_COURSE pc ON p.PROF_ID = pc.PROF_ID LEFT JOIN COURSE c ON pc.COURSE_ID = c.COURSE_ID LEFT JOIN SEMESTRE s ON c.SEMESTRE_ID = s.SEMESTRE_ID WHERE p.DEPARTEMENT_ID = (SELECT DEPARTEMENT_ID FROM FILIERE WHERE FILIERE_ID = :1) GROUP BY p.PROF_ID, p.FULL_NAME HAVING COUNT(CASE WHEN s.YEAR_ID = :2 THEN pc.COURSE_ID END) < 3 OR COUNT(pc.COURSE_ID) = 0 ORDER BY p.FULL_NAME"
+                profs_form = execute_query(prof_query_form, [int(f_id_form), int(current_year_id_form)])
+                selected_prof_form = col2_form.selectbox("Assign Professor", profs_form['FULL_NAME'] if not profs_form.empty else [])
 
             if st.button("Add Course"):
-                if not c_name or profs.empty or sems.empty:
-                    st.error("Please fill all required fields.")
+                if not c_name_form or 'profs_form' not in locals() or profs_form.empty or sems_form.empty:
+                    st.error("Please fill all required fields and ensure a professor is selected.")
                 else:
-                    p_id = int(profs[profs['FULL_NAME'] == selected_prof]['PROF_ID'].values[0])
-                    pr_ids = prereqs_df[prereqs_df['DISPLAY_NAME'].isin(selected_prereqs_display)]['COURSE_ID'].tolist() if not prereqs_df.empty else []
-                    success, msg = create_course_with_details(c_name, f_id, current_sem_id, capacity, p_id, pr_ids)
+                    p_id_form = int(profs_form[profs_form['FULL_NAME'] == selected_prof_form]['PROF_ID'].values[0])
+                    success, msg = create_course_with_details(c_name_form, f_id_form, current_sem_id_form, capacity_form, p_id_form, [])
                     if success: 
                         st.success(msg)
                         st.rerun()
                     else: 
                         st.error(msg)
-
+    
     st.divider()
 
-    # 2. Global Course List
-    courses_df = execute_query("SELECT * FROM V_DETAIL_COURSE")
+    # 1. Main Course List
+    st.subheader("📚 Global Course List")
+    courses_df = execute_query("SELECT * FROM V_DETAIL_COURSE ORDER BY COURSE_NAME")
+    st.dataframe(courses_df, use_container_width=True, hide_index=True)
+    
+    st.divider()
+
+    # 2. Integrated Explore & Detail Section
+    st.subheader("🔎 Explore Course Details")
+    
     if not courses_df.empty:
-        st.dataframe(courses_df, use_container_width=True, hide_index=True)
+        courses_df['display'] = courses_df['COURSE_NAME'] + ' (ID: ' + courses_df['COURSE_ID'].astype(str) + ')'
+        selected_course_display = st.selectbox("Select a course to manage:", ["-- Choose a Course --"] + courses_df['display'].tolist())
 
-        st.markdown("---")
+        if selected_course_display != "-- Choose a Course --":
+            selected_course_info = courses_df[courses_df['display'] == selected_course_display].iloc[0]
+            cid = int(selected_course_info['COURSE_ID'])
 
-    # 4. Form: Drop Course
-    with st.expander("🗑️ Drop Course", expanded=False):
-        all_courses_for_drop_df = execute_query("SELECT COURSE_ID, NAME FROM COURSE ORDER BY NAME")
-        if not all_courses_for_drop_df.empty:
-            course_to_drop_name = st.selectbox("Select Course to Drop", all_courses_for_drop_df['NAME'], key="drop_c_name")
+            # Fetch additional details for the selected course
+            prereqs_df = execute_query("SELECT cp.NAME FROM COURSE_PREREQUISITE pr JOIN COURSE cp ON pr.PREREQUISITE_COURSE_ID = cp.COURSE_ID WHERE pr.COURSE_ID = :1", [cid])
+            inscriptions_df = execute_query("SELECT s.full_name, ir.status, ir.request_id FROM INSCRIPTION_REQUEST ir JOIN STUDENT s ON ir.student_id = s.student_id WHERE ir.course_id = :1", [cid])
             
-            if st.button("Confirm Drop Course"):
-                course_to_drop_id = int(all_courses_for_drop_df[all_courses_for_drop_df['NAME'] == course_to_drop_name]['COURSE_ID'].values[0])
-                success, msg = delete_course_with_details(course_to_drop_id)
-                if success:
-                    st.success(f"Course '{course_to_drop_name}' deleted successfully.")
-                    st.rerun()
-                else:
-                    st.error(f"Error dropping course: {msg}")
-        else:
-            st.info("No courses available to drop.")
-        
-        st.markdown("---")
-        
-        # 3. Section: View Full Course Details
-        
-        st.subheader("🔎 View Full Course Details")
-        
-        
-        
-        course_names = courses_df['COURSE_NAME'].tolist()
-        
-        selected_c_name = st.selectbox("Select a course to explore its enrollment and prerequisites:", ["-- Choose a Course --"] + course_names)
-        
-        
-        
-        if selected_c_name != "-- Choose a Course --":
-        
-            c_info = courses_df[courses_df['COURSE_NAME'] == selected_c_name].iloc[0]
-        
-            cid = c_info['COURSE_ID']
-        
-            
-        
-            # Fetch Prerequisites
-        
-            prereqs = execute_query("""
-        
-                SELECT cp.NAME FROM COURSE_PREREQUISITE pr 
-        
-                JOIN COURSE cp ON pr.PREREQUISITE_COURSE_ID = cp.COURSE_ID 
-        
-                WHERE pr.COURSE_ID = :1
-        
-            """, [int(cid)])
-        
-            
-        
-            # Fetch Enrolled Students
-        
-            enrolled_students = execute_query("""
-        
-                SELECT s.FULL_NAME, s.CODE_APOGE FROM INSCRIPTION_REQUEST ir 
-        
-                JOIN STUDENT s ON ir.STUDENT_ID = s.STUDENT_ID 
-        
-                WHERE ir.COURSE_ID = :1 AND ir.STATUS = 'ACCEPTED'
-        
-            """, [int(cid)])
-        
-    
-        
-            # Profile Display
-        
+            # Filter for accepted students
+            enrolled_students_df = inscriptions_df[inscriptions_df['STATUS'] == 'ACCEPTED']
+
+            # Full Profile Card
             with st.container(border=True):
-        
-                st.markdown(f"### 🎯 Full Profile: {selected_c_name}")
-        
+                st.markdown(f"### 🎯 Full Profile: {selected_course_info['COURSE_NAME']}")
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.metric("Enrollment Progress", f"{len(enrolled_students_df)} / {selected_course_info['CAPACITY']}")
+                    st.write(f"**Filière:** {selected_course_info['FILIERE']}")
+                    st.write(f"**Semestre:** {selected_course_info['SEMESTRE']}")
+                with col2:
+                    st.write(f"**Professor:** {selected_course_info['PROF_NAME'] if pd.notna(selected_course_info['PROF_NAME']) else 'Not Assigned'}")
+                    st.write(f"**Prerequisites:** {', '.join(prereqs_df['NAME'].tolist()) if not prereqs_df.empty else 'None'}")
+
+            # Active Enrollment List
+            st.write("---")
+            st.write("👥 **Active Enrollment List**")
+            if not enrolled_students_df.empty:
+                st.dataframe(enrolled_students_df[['FULL_NAME']], use_container_width=True, hide_index=True, column_config={"FULL_NAME": "Student Name"})
+            else:
+                st.info("No students are actively enrolled in this course yet.")
+            
+            st.divider()
+
+            # 3. Contextual Enrollment Management
+            st.subheader(f"✉️ Enrollment Requests for {selected_course_info['COURSE_NAME']}")
+            
+            search_enrollment = st.text_input("Search enrollments by student name:", key=f"search_enroll_{cid}")
+            
+            display_inscriptions = inscriptions_df
+            if search_enrollment:
+                display_inscriptions = inscriptions_df[inscriptions_df['FULL_NAME'].str.contains(search_enrollment, case=False, na=False)]
+            
+            st.dataframe(display_inscriptions[['FULL_NAME', 'STATUS']], use_container_width=True, hide_index=True, column_config={"FULL_NAME": "Student Name", "STATUS": "Status"})
+
+            # Cancel Action
+            st.write("---")
+            st.write("⚙️ **Manage Inscription Status**")
+            
+            cancellable_inscriptions = inscriptions_df[inscriptions_df['STATUS'].isin(['PENDING', 'ACCEPTED'])]
+            if not cancellable_inscriptions.empty:
+                cancellable_inscriptions['display'] = cancellable_inscriptions.apply(lambda row: f"{row['FULL_NAME']} ({row['STATUS']}) - ID: {row['REQUEST_ID']}", axis=1)
                 
-        
-                c1, c2 = st.columns(2)
-        
-                with c1:
-        
-                    st.write(f"**Capacity:** {len(enrolled_students)} / {c_info['CAPACITY']}")
-        
-                    st.write(f"**Filière:** {c_info['FILIERE']} | **Semestre:** {c_info['SEMESTRE']}")
-        
-                    # Fetch Dept dynamically
-        
-                    dept = execute_query("SELECT d.NAME FROM DEPARTEMENT d JOIN FILIERE f ON d.DEPARTEMENT_ID = f.DEPARTEMENT_ID WHERE f.NAME = :1", [c_info['FILIERE']])
-        
-                    st.write(f"**Department:** {dept.iloc[0]['NAME'] if not dept.empty else 'N/A'}")
-        
+                selected_to_cancel = st.selectbox("Select an enrollment to cancel:", cancellable_inscriptions['display'])
                 
-        
-                with c2:
-        
-                    st.write(f"**Professor:** {c_info['PROF_NAME'] if c_info['PROF_NAME'] else 'Not Assigned'}")
-        
-                    if not prereqs.empty:
-        
-                        st.write(f"**📚 Prerequisites:** {', '.join(prereqs['NAME'].tolist())}")
-        
+                req_id_to_cancel = int(cancellable_inscriptions[cancellable_inscriptions['display'] == selected_to_cancel].iloc[0]['REQUEST_ID'])
+                
+                if st.button("🔴 Cancel Enrollment", key=f"cancel_enroll_{req_id_to_cancel}"):
+                    success, msg = execute_dml("UPDATE INSCRIPTION_REQUEST SET status = 'REJECTED' WHERE request_id = :1", [req_id_to_cancel])
+                    if success:
+                        st.success("Enrollment has been canceled/rejected.")
+                        st.rerun()
                     else:
-        
-                        st.write("**📚 Prerequisites:** None")
-        
-    
-        
-                st.divider()
-        
-                st.write("👥 **Active Student Enrollment**")
-        
-                if not enrolled_students.empty:
-        
-                    st.dataframe(enrolled_students, use_container_width=True, hide_index=True)
-        
-                else:
-        
-                    st.info("No students enrolled in this course yet.")
+                        st.error(f"Failed to cancel enrollment: {msg}")
+            else:
+                st.info("No active or pending enrollments to manage for this course.")
+    else:
+        st.info("No courses available in the system.")
 def display_professor_management():
     st.subheader("👨‍🏫 Professor Management")
     
@@ -498,14 +378,307 @@ def display_schedule_management():
                     success, msg = execute_dml(dml, [int(c_id), s_date, start_dt, end_dt, room, type_sel, int(f_id), int(s_id)])
                     if success: st.success("Scheduled!"); st.rerun()
                     else: st.error(msg)
+            
+            # New code to show all sessions filtered by Filière and Semestre
+            st.divider()
+            st.subheader("🗓️ All Sessions")
+
+            # Query to fetch all sessions for the selected filiere and semestre
+            sessions_query = """
+                SELECT
+                    c.name AS "Course",
+                    se.type AS "Type",
+                    TO_CHAR(se.seance_date, 'YYYY-MM-DD') AS "Date",
+                    TO_CHAR(se.start_time, 'HH24:MI') AS "Start Time",
+                    TO_CHAR(se.end_time, 'HH24:MI') AS "End Time",
+                    se.room AS "Room"
+                FROM seance se
+                JOIN course c ON se.course_id = c.course_id
+                JOIN section sec ON se.section_id = sec.section_id
+                WHERE sec.filiere_id = :filiere_id AND sec.semestre_id = :semestre_id
+                ORDER BY se.seance_date, se.start_time
+            """
+            sessions_df = execute_query(sessions_query, [int(f_id), int(s_id)])
+
+            if not sessions_df.empty:
+                st.dataframe(sessions_df, use_container_width=True, hide_index=True)
+            else:
+                st.info(f"No sessions found for Filière '{f_name}' and Semestre '{selected_sem}'.")
+        else: # if not sems.empty is false, but filieres is not empty
+            st.info("No active semesters found for the selected Filière. Please create one.")
+    else: # if filieres is empty
+        st.info("No filières found. Please create a Filière first.")
+
+def display_filiere_management():
+    st.subheader("🎓 Filière Management")
+
+    # --- Form: Add New Filière ---
+    with st.expander("➕ Add New Filière"):
+        with st.form("add_filiere_form"):
+            filiere_name = st.text_input("Filière Name")
+            
+            # Fetch departments for the selectbox
+            depts_df = execute_query("SELECT DEPARTEMENT_ID, NAME FROM DEPARTEMENT ORDER BY NAME")
+            if not depts_df.empty:
+                dept_name = st.selectbox("Parent Department", depts_df['NAME'])
+            else:
+                st.warning("No departments found. Please create a department first.")
+                dept_name = None
+
+            submitted = st.form_submit_button("Create Filière")
+            if submitted:
+                if not filiere_name or not dept_name:
+                    st.error("Please fill all fields.")
+                else:
+                    dept_id = depts_df[depts_df['NAME'] == dept_name]['DEPARTEMENT_ID'].values[0]
+                    success, msg = execute_dml("INSERT INTO FILIERE (NAME, DEPARTEMENT_ID) VALUES (:1, :2)", [filiere_name, int(dept_id)])
+                    if success:
+                        st.success("Filière created successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Error creating filière: {msg}")
+
+    st.divider()
+
+    # --- View All Filières with Search ---
+    st.subheader("📋 All Filières")
+    search_filiere = st.text_input("🔍 Search by Filière Name or Department", key="search_filiere")
+    
+    filieres_df = execute_query("SELECT FILIERE_ID, FILIERE, DEPARTEMENT, TOTAL_SEMESTRES FROM V_DETAIL_FILIERE")
+
+    if search_filiere and not filieres_df.empty:
+        # Using a more robust search method to check all string columns
+        filieres_df = filieres_df[filieres_df.apply(lambda row: row.astype(str).str.contains(search_filiere, case=False).any(), axis=1)]
+
+    st.dataframe(filieres_df, use_container_width=True, hide_index=True)
+
+    if not filieres_df.empty:
+        st.divider()
+        st.subheader("🔎 Explore Filière")
+        
+        filiere_names = filieres_df['FILIERE'].tolist()
+        selected_filiere_name = st.selectbox("Select a filière", ["-- Choose a Filière --"] + filiere_names)
+
+        if selected_filiere_name != "-- Choose a Filière --":
+            # Ensure the selected filiere is still in the dataframe after a potential search filter
+            filtered_filiere_info = filieres_df[filieres_df['FILIERE'] == selected_filiere_name]
+            if not filtered_filiere_info.empty:
+                selected_filiere_id = int(filtered_filiere_info.iloc[0]['FILIERE_ID'])
+
+                col1, col2 = st.columns(2)
+
+                with col1:
+                    st.write("👥 **Enrolled Students**")
+                    students_df = execute_query("SELECT FULL_NAME, CODE_APOGE FROM STUDENT WHERE FILIERE_ID = :1 ORDER BY FULL_NAME", [selected_filiere_id])
+                    if not students_df.empty:
+                        st.dataframe(students_df, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No students enrolled in this filière.")
+
+                with col2:
+                    st.write("📚 **Semesters**")
+                    semesters_df = execute_query("""
+                        SELECT s.CODE, ay.LABEL AS ACADEMIC_YEAR
+                        FROM SEMESTRE s
+                        JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
+                        WHERE s.FILIERE_ID = :1
+                        ORDER BY ay.START_DATE DESC, s.CODE
+                    """, [selected_filiere_id])
+                    if not semesters_df.empty:
+                        st.dataframe(semesters_df, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No semesters defined for this filière.")
+
+                # --- Drop Filière ---
+                st.divider()
+                with st.expander("🗑️ Danger Zone: Delete Filière"):
+                    st.warning(f"This will attempt to delete the **{selected_filiere_name}** filière. This action is irreversible and will fail if any students, semesters, or courses are still assigned to it.")
+                    
+                    if st.button("Confirm and Delete Filière", key=f"delete_filiere_{selected_filiere_id}"):
+                        success, msg = execute_dml("DELETE FROM FILIERE WHERE FILIERE_ID = :1", [selected_filiere_id])
+                        if success:
+                            st.success(f"Filière '{selected_filiere_name}' deleted successfully.")
+                            st.rerun()
+                        else:
+                            st.error(f"Deletion Failed: {msg}")
+
+def display_department_management():
+    st.subheader("🏢 Department Management")
+
+    # --- Form: Add New Department ---
+    with st.expander("➕ Add New Department"):
+        with st.form("add_dept_form"):
+            dept_name = st.text_input("Department Name")
+            submitted = st.form_submit_button("Create Department")
+            if submitted:
+                if not dept_name:
+                    st.error("Department name cannot be empty.")
+                else:
+                    success, msg = execute_dml("INSERT INTO DEPARTEMENT (NAME) VALUES (:1)", [dept_name])
+                    if success:
+                        st.success("Department created successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Error creating department: {msg}")
+
+    st.divider()
+
+    # --- View All Departments ---
+    st.subheader("📋 All Departments")
+    search_dept = st.text_input("🔍 Search Department by Name", key="search_department")
+    depts_df = execute_query("SELECT DEPARTEMENT_ID, DEPARTEMENT as \"Department Name\", TOTAL_FILIERES as \"Total Filières\", TOTAL_PROFS as \"Total Professors\" FROM V_DETAIL_DEPARTEMENT ORDER BY \"Department Name\"")
+    
+    if search_dept and not depts_df.empty:
+        depts_df = depts_df[depts_df.apply(lambda row: row.astype(str).str.contains(search_dept, case=False).any(), axis=1)]
+
+    st.dataframe(depts_df, use_container_width=True, hide_index=True)
+
+    if not depts_df.empty:
+        st.divider()
+        st.subheader("🔎 Explore Department")
+        
+        dept_names = depts_df['Department Name'].tolist()
+        selected_dept_name = st.selectbox("Select a department", ["-- Choose a Department --"] + dept_names)
+
+        if selected_dept_name != "-- Choose a Department --":
+            # Ensure the selected department is still in the dataframe after a potential search filter
+            filtered_dept_info = depts_df[depts_df['Department Name'] == selected_dept_name]
+            if not filtered_dept_info.empty:
+                selected_dept_id = int(filtered_dept_info.iloc[0]['DEPARTEMENT_ID'])
+
+                col1, col2 = st.columns(2)
+
+                # --- List Professors in Department ---
+                with col1:
+                    st.write("👨‍🏫 **Professors**")
+                    profs_in_dept = execute_query("SELECT FULL_NAME FROM PROF WHERE DEPARTEMENT_ID = :1 ORDER BY FULL_NAME", [selected_dept_id])
+                    if not profs_in_dept.empty:
+                        st.dataframe(profs_in_dept, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No professors in this department.")
+
+                # --- List Filières in Department ---
+                with col2:
+                    st.write("🎓 **Filières**")
+                    filieres_in_dept = execute_query("SELECT NAME FROM FILIERE WHERE DEPARTEMENT_ID = :1 ORDER BY NAME", [selected_dept_id])
+                    if not filieres_in_dept.empty:
+                        st.dataframe(filieres_in_dept, hide_index=True, use_container_width=True)
+                    else:
+                        st.info("No filières in this department.")
+
+                # --- Drop Department ---
+                st.divider()
+                with st.expander("🗑️ Danger Zone: Delete Department"):
+                    st.warning(f"This will attempt to delete the **{selected_dept_name}** department. This action is irreversible and will only succeed if no professors or filières are currently assigned to it.")
+                    
+                    if st.button("Confirm and Delete Department", key=f"delete_dept_{selected_dept_id}"):
+                        # Attempt to delete. The DML utility will catch the integrity constraint error.
+                        success, msg = execute_dml("DELETE FROM DEPARTEMENT WHERE DEPARTEMENT_ID = :1", [selected_dept_id])
+                        if success:
+                            st.success(f"Department '{selected_dept_name}' deleted successfully.")
+                            st.rerun()
+                        else:
+                            st.error(f"Deletion Failed: {msg}")
+
+def display_semestre_management():
+    st.subheader("📚 Semester Management")
+
+    # 1. Add New Semestre
+    with st.expander("➕ Add New Semester"):
+        with st.form("add_semester_form"):
+            filieres_df = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
+            years_df = execute_query("SELECT YEAR_ID, LABEL FROM ACADEMIC_YEAR ORDER BY LABEL DESC")
+
+            selected_filiere_name = st.selectbox("Filiere", filieres_df['NAME'] if not filieres_df.empty else [], key="sem_filiere")
+            semester_code = st.text_input("Semester Code (e.g., S1, S2)")
+            selected_year_label = st.selectbox("Academic Year", years_df['LABEL'] if not years_df.empty else [], key="sem_year")
+
+            submitted = st.form_submit_button("Create Semester")
+            if submitted:
+                if not all([selected_filiere_name, semester_code, selected_year_label]):
+                    st.error("Please fill all fields.")
+                else:
+                    f_id = filieres_df[filieres_df['NAME'] == selected_filiere_name]['FILIERE_ID'].iloc[0]
+                    y_id = years_df[years_df['LABEL'] == selected_year_label]['YEAR_ID'].iloc[0]
+                    success, msg = execute_dml(
+                        "INSERT INTO SEMESTRE (CODE, FILIERE_ID, YEAR_ID) VALUES (:1, :2, :3)",
+                        [semester_code.upper(), int(f_id), int(y_id)]
+                    )
+                    if success:
+                        st.success("Semester created successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to create semester: {msg}")
+
+    st.divider()
+
+    # 2. View & Filter Semesters
+    st.subheader("📋 All Semesters")
+    
+    all_semesters_query = """
+        SELECT 
+            s.SEMESTRE_ID, 
+            s.CODE, 
+            f.NAME as FILIERE_NAME, 
+            ay.LABEL as ACADEMIC_YEAR
+        FROM SEMESTRE s
+        JOIN FILIERE f ON s.FILIERE_ID = f.FILIERE_ID
+        JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
+        ORDER BY ay.LABEL DESC, f.NAME, s.CODE
+    """
+    all_semesters_df = execute_query(all_semesters_query)
+
+    filiere_list_filter = ["All Filières"] + sorted(all_semesters_df['FILIERE_NAME'].unique())
+    selected_filiere_filter = st.selectbox("Filter by Filière", filiere_list_filter)
+
+    if selected_filiere_filter == "All Filières":
+        display_semesters_df = all_semesters_df
+    else:
+        display_semesters_df = all_semesters_df[all_semesters_df['FILIERE_NAME'] == selected_filiere_filter]
+    
+    st.dataframe(display_semesters_df[['CODE', 'FILIERE_NAME', 'ACADEMIC_YEAR']], use_container_width=True, hide_index=True)
+
+    st.divider()
+
+    # 3. Detailed Semester View
+    st.subheader("🔎 Explore Semester Content")
+    if not display_semesters_df.empty:
+        display_semesters_df['display'] = display_semesters_df.apply(
+            lambda row: f"{row['CODE']} - {row['FILIERE_NAME']} ({row['ACADEMIC_YEAR']})", axis=1
+        )
+        selected_semester_display = st.selectbox(
+            "Select a semester to see its courses:",
+            ["-- Choose a Semester --"] + display_semesters_df['display'].tolist()
+        )
+
+        if selected_semester_display != "-- Choose a Semester --":
+            selected_sem_id = display_semesters_df[display_semesters_df['display'] == selected_semester_display].iloc[0]['SEMESTRE_ID']
+            
+            courses_in_sem_df = execute_query("""
+                SELECT 
+                    c.NAME AS "Course Name",
+                    p.FULL_NAME AS "Professor"
+                FROM COURSE c
+                LEFT JOIN PROF_COURSE pc ON c.COURSE_ID = pc.COURSE_ID
+                LEFT JOIN PROF p ON pc.PROF_ID = p.PROF_ID
+                WHERE c.SEMESTRE_ID = :1
+                ORDER BY c.NAME
+            """, [int(selected_sem_id)])
+
+            st.write(f"**Courses in {selected_semester_display}:**")
+            if not courses_in_sem_df.empty:
+                st.dataframe(courses_in_sem_df, use_container_width=True, hide_index=True)
+            else:
+                st.info("No courses are assigned to this semester yet.")
+    else:
+        st.info("No semesters to display for the selected filter.")
 
 def display_admin_dashboard():
     st.title("🎓 University Management System")
     
-    # Corrected Tabs for all Management sections
     tabs = st.tabs([
         "Statistics", "Students", "Courses", "Professors", 
-        "Departments", "Filières", "Schedules", "Blocked"
+        "Departments", "Filières", "Semesters", "Schedules", "Blocked"
     ])
     
     with tabs[0]:
@@ -521,4 +694,7 @@ def display_admin_dashboard():
     with tabs[1]: display_student_management()
     with tabs[2]: display_course_management()
     with tabs[3]: display_professor_management()
-    with tabs[6]: display_schedule_management()
+    with tabs[4]: display_department_management()
+    with tabs[5]: display_filiere_management()
+    with tabs[6]: display_semestre_management()
+    with tabs[7]: display_schedule_management()
