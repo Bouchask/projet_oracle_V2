@@ -1136,26 +1136,72 @@ CREATE INDEX idx_attendance_student ON attendance(student_id);
 CREATE INDEX idx_attendance_seance ON attendance(seance_id);
 CREATE INDEX idx_course_semestre ON course(semestre_id);
 CREATE INDEX idx_inscription_status ON inscription_request(status);
--- هاد التريكر كيمنع قبول أي طالب جديد إلا القسم وصل للحد الأقصى (Capacity)
-CREATE OR REPLACE TRIGGER trg_check_course_capacity
-BEFORE UPDATE ON inscription_request
-FOR EACH ROW
-WHEN (NEW.status = 'ACCEPTED' AND OLD.status <> 'ACCEPTED')
-DECLARE
+-- Final and definitive fix for the capacity check logic.
+-- This block first cleans up all previous, conflicting triggers.
+BEGIN
+   EXECUTE IMMEDIATE 'DROP TRIGGER trg_check_course_capacity';
+EXCEPTION
+   WHEN OTHERS THEN
+      IF SQLCODE != -4080 THEN -- suppress "trigger does not exist" error
+         RAISE;
+      END IF;
+END;
+/
+
+BEGIN
+   EXECUTE IMMEDIATE 'DROP TRIGGER trg_check_course_capacity_compound';
+EXCEPTION
+   WHEN OTHERS THEN
+      IF SQLCODE != -4080 THEN -- suppress "trigger does not exist" error
+         RAISE;
+      END IF;
+END;
+/
+
+-- Then, it creates the correct implementation using an autonomous function.
+CREATE OR REPLACE FUNCTION fn_check_course_capacity (
+    p_course_id IN course.course_id%TYPE
+) RETURN NUMBER
+IS
+    PRAGMA AUTONOMOUS_TRANSACTION;
     v_current_count NUMBER;
     v_capacity      NUMBER;
 BEGIN
-    -- 1. نجيبو شحال كاين دالطلبة مقبولين دابا وشحال هو الحد الأقصى
-    SELECT 
-        (SELECT COUNT(*) FROM inscription_request WHERE course_id = :NEW.course_id AND status = 'ACCEPTED'),
-        capacity
-    INTO v_current_count, v_capacity
+    -- Get the course's capacity
+    SELECT capacity
+    INTO v_capacity
     FROM course
-    WHERE course_id = :NEW.course_id;
+    WHERE course_id = p_course_id;
 
-    -- 2. إلا كان العدد واصل للحد الأقصى، نمنعو العملية
-    IF v_current_count >= v_capacity THEN
+    -- Get the current number of accepted students
+    SELECT COUNT(*)
+    INTO v_current_count
+    FROM inscription_request
+    WHERE course_id = p_course_id AND status = 'ACCEPTED';
+
+    -- If capacity is exceeded, raise an error
+    IF v_current_count > v_capacity THEN
         RAISE_APPLICATION_ERROR(-20060, 'Echec inscription : Le cours a atteint sa capacité maximale (' || v_capacity || ')');
+    END IF;
+    
+    COMMIT; -- Required for autonomous transactions
+    RETURN 1; -- Return a success value
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK; -- Rollback on error
+        RAISE; -- Re-raise the original exception to the calling statement
+END fn_check_course_capacity;
+/
+
+CREATE OR REPLACE TRIGGER trg_check_capacity_on_accept
+AFTER UPDATE OF status ON inscription_request
+FOR EACH ROW
+DECLARE
+    v_result NUMBER;
+BEGIN
+    -- If a student is accepted, call the autonomous function to check capacity
+    IF :NEW.status = 'ACCEPTED' AND :OLD.status <> 'ACCEPTED' THEN
+        v_result := fn_check_course_capacity(:NEW.course_id);
     END IF;
 END;
 /
