@@ -3,7 +3,8 @@ import pandas as pd
 import random
 import datetime
 from db_utils import (
-    execute_query, execute_dml, create_course_with_details, create_new_professor, delete_course_with_details
+    execute_query, execute_dml, create_course_with_details, 
+    create_new_professor, delete_course_with_details, call_procedure
 )
 
 # --- Helper Functions ---
@@ -33,12 +34,23 @@ def display_student_management():
             if not filieres_df.empty:
                 f_id = filieres_df[filieres_df['NAME'] == selected_filiere]['FILIERE_ID'].values[0]
                 sem_query = """
-                    SELECT s.SEMESTRE_ID, s.CODE || ' (' || ay.LABEL || ')' as DISP 
-                    FROM SEMESTRE s JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
-                    WHERE s.FILIERE_ID = :1 AND s.YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)
+                    SELECT
+                        s.SEMESTRE_ID,
+                        s.CODE || ' (' || ay.LABEL || ')' as DISP
+                    FROM SEMESTRE s
+                    JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
+                    WHERE s.FILIERE_ID = :1
+                      AND s.YEAR_ID IN (
+                          SELECT YEAR_ID FROM (
+                              SELECT YEAR_ID
+                              FROM ACADEMIC_YEAR
+                              ORDER BY START_DATE DESC
+                          ) WHERE ROWNUM <= 2
+                      )
+                    ORDER BY ay.START_DATE DESC, s.CODE ASC
                 """
                 semestres_df = execute_query(sem_query, [int(f_id)])
-                selected_sem = st.selectbox("Semestre", semestres_df['DISP'] if not semestres_df.empty else ["No active semesters found"])
+                selected_sem = st.selectbox("Semestre", semestres_df['DISP'] if not semestres_df.empty else ["No recent semesters found"])
             
             if st.form_submit_button("Create Student"):
                 if not full_name or semestres_df.empty:
@@ -146,7 +158,24 @@ def display_course_management():
             c_name_form = col1_form.text_input("Course Name")
             capacity_form = col1_form.number_input("Capacity", min_value=1, value=30)
             
-            sem_query_form = "SELECT s.SEMESTRE_ID, s.CODE, s.YEAR_ID, s.CODE || ' (' || ay.LABEL || ')' as DISP FROM SEMESTRE s JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID WHERE s.FILIERE_ID = :1 AND s.YEAR_ID = (SELECT MAX(YEAR_ID) FROM ACADEMIC_YEAR)"
+            sem_query_form = """
+                SELECT 
+                    s.SEMESTRE_ID, 
+                    s.CODE,
+                    s.YEAR_ID,
+                    s.CODE || ' (' || ay.LABEL || ')' as DISP
+                FROM SEMESTRE s 
+                JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
+                WHERE s.FILIERE_ID = :1
+                  AND s.YEAR_ID IN (
+                      SELECT YEAR_ID FROM (
+                          SELECT YEAR_ID 
+                          FROM ACADEMIC_YEAR 
+                          ORDER BY START_DATE DESC
+                      ) WHERE ROWNUM <= 2
+                  )
+                ORDER BY ay.START_DATE DESC, s.CODE ASC
+            """
             sems_form = execute_query(sem_query_form, [int(f_id_form)])
             selected_sem_display_form = col2_form.selectbox("Semestre", sems_form['DISP'] if not sems_form.empty else [])
             
@@ -772,12 +801,214 @@ def display_semestre_management():
     else:
         st.info("No semesters to display for the selected filter.")
 
+def display_blocked_management(admin_id):
+    st.subheader("🚫 Blocked Students Management")
+    st.info("Filter by academic structure to view and manage students blocked due to the 3-absences rule.")
+
+    # 1. Hierarchical Filtering
+    filieres_df = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
+    if filieres_df.empty:
+        st.warning("No filières found. Please create academic structures first.")
+        return
+
+    col1, col2, col3 = st.columns(3)
+    
+    with col1:
+        selected_filiere_name = st.selectbox("Filter by Filière", filieres_df['NAME'])
+        f_id = int(filieres_df[filieres_df['NAME'] == selected_filiere_name].iloc[0]['FILIERE_ID'])
+
+    semestre_query = """
+        SELECT 
+            s.SEMESTRE_ID, 
+            s.CODE || ' (' || ay.LABEL || ')' AS DISPLAY_LABEL
+        FROM SEMESTRE s 
+        JOIN ACADEMIC_YEAR ay ON s.YEAR_ID = ay.YEAR_ID
+        WHERE s.FILIERE_ID = :1
+          AND s.YEAR_ID IN (
+              SELECT YEAR_ID FROM (
+                  SELECT YEAR_ID 
+                  FROM ACADEMIC_YEAR 
+                  ORDER BY START_DATE DESC
+              ) WHERE ROWNUM <= 2
+          )
+        ORDER BY ay.START_DATE DESC, s.CODE ASC
+    """
+    semestres_df = execute_query(semestre_query, [f_id])
+    
+    with col2:
+        if semestres_df.empty:
+            st.selectbox("Filter by Semestre", [], disabled=True)
+            st.info("This filière has no recent semesters defined.")
+            return
+        selected_semestre_display = st.selectbox("Filter by Semestre", semestres_df['DISPLAY_LABEL'])
+        s_id = int(semestres_df[semestres_df['DISPLAY_LABEL'] == selected_semestre_display].iloc[0]['SEMESTRE_ID'])
+
+    courses_df = execute_query("SELECT COURSE_ID, NAME FROM COURSE WHERE SEMESTRE_ID = :1 ORDER BY NAME", [s_id])
+    
+    with col3:
+        if courses_df.empty:
+            st.selectbox("Filter by Course", [], disabled=True)
+            st.info("This semester has no courses defined.")
+            return
+        selected_course_name = st.selectbox("Filter by Course", courses_df['NAME'])
+        c_id = int(courses_df[courses_df['NAME'] == selected_course_name].iloc[0]['COURSE_ID'])
+
+    st.divider()
+
+    # 2. Dynamic Data Display
+    st.subheader(f"Blocked Students in: {selected_course_name}")
+    
+    blocked_query = """
+        SELECT
+            st.student_id,
+            st.full_name,
+            f.name AS filiere,
+            sem.code AS semestre,
+            c.name AS course_name
+        FROM course_result cr
+        JOIN student st ON cr.student_id = st.student_id
+        JOIN course c ON cr.course_id = c.course_id
+        JOIN semestre sem ON c.semestre_id = sem.semestre_id
+        JOIN filiere f ON sem.filiere_id = f.filiere_id
+        WHERE cr.status = 'FAILED' AND c.course_id = :1
+    """
+    blocked_df = execute_query(blocked_query, [c_id])
+
+    if blocked_df.empty:
+        st.success("✅ No students are currently blocked for this specific selection.")
+        return
+
+    # Rename columns for display
+    display_df = blocked_df.rename(columns={
+        'STUDENT_ID': 'Student ID',
+        'FULL_NAME': 'Full Name',
+        'FILIERE': 'Filière',
+        'SEMESTRE': 'Semestre',
+        'COURSE_NAME': 'Course Name'
+    })
+    st.dataframe(display_df, use_container_width=True, hide_index=True)
+
+    # 3. Unblock Action Form
+    st.divider()
+    st.subheader("🔓 Unblock a Student")
+    with st.form("unblock_student_form"):
+        # Use original blocked_df for student ID retrieval
+        blocked_df['display'] = blocked_df.apply(
+            lambda row: f"{row['FULL_NAME']} (ID: {row['STUDENT_ID']})", axis=1
+        )
+        selected_display = st.selectbox(
+            "Select student to unblock",
+            options=blocked_df['display'].tolist()
+        )
+        
+        justification = st.text_area("Justification for unblocking (minimum 10 characters)")
+
+        submitted = st.form_submit_button("Unblock Student")
+        if submitted:
+            if len(justification) < 10:
+                st.error("Justification must be at least 10 characters long.")
+            else:
+                student_id_to_unblock = int(selected_display.split('(ID: ')[1][:-1])
+                # The course ID `c_id` is available from the filter above
+                params = [student_id_to_unblock, c_id, admin_id, justification]
+                
+                success, msg = call_procedure("admin_unblock_student", params)
+                
+                if success:
+                    st.success(f"Successfully unblocked the selected student.")
+                    st.rerun()
+                else:
+                    st.error(f"Failed to unblock student: {msg}")
+
+def display_academic_structure_management():
+    st.subheader("🏛️ Academic Structure Management")
+
+    # 1. Add New Academic Year
+    with st.expander("➕ Add New Academic Year"):
+        with st.form("add_year_form"):
+            label = st.text_input("Academic Year Label (e.g., '2026-2027')")
+            start_date = st.date_input("Start Date")
+            end_date = st.date_input("End Date")
+            
+            submitted = st.form_submit_button("Create Academic Year")
+            if submitted:
+                if not label or not start_date or not end_date:
+                    st.error("Please fill all fields.")
+                elif start_date >= end_date:
+                    st.error("Start Date must be before End Date.")
+                else:
+                    success, msg = execute_dml(
+                        "INSERT INTO ACADEMIC_YEAR (LABEL, START_DATE, END_DATE) VALUES (:1, :2, :3)",
+                        [label, start_date, end_date]
+                    )
+                    if success:
+                        st.success("Academic Year created successfully!")
+                        st.rerun()
+                    else:
+                        st.error(f"Failed to create year: {msg}")
+
+    st.divider()
+
+    # 2. Academic Structure Explorer
+    st.subheader("🔎 Academic Structure Deep Dive")
+    
+    years_df = execute_query("SELECT YEAR_ID, LABEL FROM ACADEMIC_YEAR ORDER BY LABEL DESC")
+    if not years_df.empty:
+        selected_year_label = st.selectbox("Select an Academic Year to Explore", years_df['LABEL'])
+        selected_year_id = int(years_df[years_df['LABEL'] == selected_year_label].iloc[0]['YEAR_ID'])
+
+        filieres_df = execute_query("SELECT FILIERE_ID, NAME FROM FILIERE ORDER BY NAME")
+        
+        for _, filiere in filieres_df.iterrows():
+            with st.expander(f"🎓 Filière: {filiere['NAME']}"):
+                filiere_id = int(filiere['FILIERE_ID'])
+                
+                semesters_df = execute_query(
+                    "SELECT SEMESTRE_ID, CODE FROM SEMESTRE WHERE FILIERE_ID = :1 AND YEAR_ID = :2 ORDER BY CODE",
+                    [filiere_id, selected_year_id]
+                )
+                
+                if not semesters_df.empty:
+                    for _, semester in semesters_df.iterrows():
+                        st.markdown(f"**Semester: {semester['CODE']}**")
+                        semester_id = int(semester['SEMESTRE_ID'])
+                        
+                        courses_df = execute_query(
+                            "SELECT NAME FROM COURSE WHERE SEMESTRE_ID = :1 ORDER BY NAME",
+                            [semester_id]
+                        )
+                        
+                        if not courses_df.empty:
+                            for course_name in courses_df['NAME'].tolist():
+                                st.markdown(f"- {course_name}")
+                        else:
+                            st.info(f"No courses assigned to semester {semester['CODE']}.")
+                else:
+                    st.warning("No semesters defined for this filière in the selected academic year.")
+
+    else:
+        st.info("No academic years found. Please add one first.")
+
+
 def display_admin_dashboard():
     st.title("🎓 University Management System")
+
+    # Fetch Admin ID once for the session
+    if 'admin_id' not in st.session_state:
+        admin_username = st.session_state.user_info['LOGIN_CODE']
+        admin_id_df = execute_query("SELECT ADMIN_ID FROM ADMIN WHERE USERNAME = :1", [admin_username])
+        if not admin_id_df.empty:
+            st.session_state.admin_id = int(admin_id_df.iloc[0]['ADMIN_ID'])
+        else:
+            st.error("Could not verify administrator identity. Aborting.")
+            st.stop()
     
+    admin_id = st.session_state.admin_id
+
     tabs = st.tabs([
         "Statistics", "Students", "Courses", "Professors", 
-        "Departments", "Filières", "Semesters", "Schedules", "Blocked"
+        "Departments", "Filières", "Semesters", "Schedules", 
+        "Academic Structure", "Blocked"
     ])
     
     with tabs[0]:
@@ -797,3 +1028,5 @@ def display_admin_dashboard():
     with tabs[5]: display_filiere_management()
     with tabs[6]: display_semestre_management()
     with tabs[7]: display_schedule_management()
+    with tabs[8]: display_academic_structure_management()
+    with tabs[9]: display_blocked_management(admin_id)

@@ -243,24 +243,75 @@ BEGIN
     END IF;
 END;
 /
+
+CREATE OR REPLACE TRIGGER trg_check_prof_dept_alignment
+BEFORE INSERT ON prof_course
+FOR EACH ROW
+DECLARE
+    v_prof_dept_id      prof.departement_id%TYPE;
+    v_course_dept_id    filiere.departement_id%TYPE;
+BEGIN
+    -- Get the professor's department ID
+    SELECT departement_id
+    INTO v_prof_dept_id
+    FROM prof
+    WHERE prof_id = :NEW.prof_id;
+
+    -- Get the department ID of the course's filière
+    SELECT f.departement_id
+    INTO v_course_dept_id
+    FROM course c
+    JOIN filiere f ON c.filiere_id = f.filiere_id
+    WHERE c.course_id = :NEW.course_id;
+
+    -- Compare the two department IDs
+    IF v_prof_dept_id != v_course_dept_id THEN
+        RAISE_APPLICATION_ERROR(
+            -20070, 
+            'Action Refusée : Le professeur doit appartenir au même département que la filière du cours.'
+        );
+    END IF;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20071, 'Invalid prof_id or course_id provided during alignment check.');
+END;
+/
+CREATE OR REPLACE FUNCTION fn_check_semester_course_limit (
+    p_filiere_id IN course.filiere_id%TYPE,
+    p_semestre_id IN course.semestre_id%TYPE
+) RETURN NUMBER
+IS
+    PRAGMA AUTONOMOUS_TRANSACTION;
+    v_count NUMBER;
+BEGIN
+    -- Get the current count of COMMITTED courses in this semester
+    SELECT COUNT(*)
+    INTO v_count
+    FROM course
+    WHERE filiere_id = p_filiere_id AND semestre_id = p_semestre_id;
+
+    -- If the count is already at the limit of 7, we cannot add another.
+    IF v_count >= 7 THEN
+        RAISE_APPLICATION_ERROR(-20002, 'Maximum 7 cours autorisés par filière et semestre');
+    END IF;
+    
+    COMMIT;
+    RETURN 1;
+EXCEPTION
+    WHEN OTHERS THEN
+        ROLLBACK;
+        RAISE;
+END fn_check_semester_course_limit;
+/
+
 CREATE OR REPLACE TRIGGER trg_max_7_courses_per_semestre
 BEFORE INSERT ON course
 FOR EACH ROW
 DECLARE
-    v_count NUMBER;
+    v_result NUMBER;
 BEGIN
-    SELECT COUNT(*)
-    INTO v_count
-    FROM course
-    WHERE filiere_id = :NEW.filiere_id
-      AND semestre_id = :NEW.semestre_id;
-
-    IF v_count >= 7 THEN
-        RAISE_APPLICATION_ERROR(
-            -20002,
-            'Maximum 7 cours autorisés par filière et semestre'
-        );
-    END IF;
+    -- Call the autonomous function to check the course limit
+    v_result := fn_check_semester_course_limit(:NEW.filiere_id, :NEW.semestre_id);
 END;
 /
 CREATE OR REPLACE TRIGGER trg_check_prerequisite

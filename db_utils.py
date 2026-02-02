@@ -134,26 +134,48 @@ def create_course_with_details(course_name, filiere_id, semestre_id, capacity, p
         connection = pool.acquire()
         connection.begin()
         with connection.cursor() as cursor:
+            # --- New Validation Logic: Check if professor belongs to the correct department ---
+            cursor.execute("SELECT d.DEPARTEMENT_ID FROM YAHYA_ADMIN.FILIERE f JOIN YAHYA_ADMIN.DEPARTEMENT d ON f.DEPARTEMENT_ID = d.DEPARTEMENT_ID WHERE f.FILIERE_ID = :1", [filiere_id])
+            filiere_dept_id_row = cursor.fetchone()
+            if not filiere_dept_id_row:
+                raise ValueError("Invalid Filiere ID provided.")
+            filiere_dept_id = filiere_dept_id_row[0]
+
+            cursor.execute("SELECT DEPARTEMENT_ID FROM YAHYA_ADMIN.PROF WHERE PROF_ID = :1", [prof_id])
+            prof_dept_id_row = cursor.fetchone()
+            if not prof_dept_id_row:
+                raise ValueError("Invalid Professor ID provided.")
+            prof_dept_id = prof_dept_id_row[0]
+
+            if filiere_dept_id != prof_dept_id:
+                raise ValueError("The assigned professor must belong to the same department as the course's filière.")
+            # --- End New Validation Logic ---
+
+            # 1. Insert the course and get its new ID
             course_id_var = cursor.var(oracledb.NUMBER)
-            cursor.execute(
-                "INSERT INTO YAHYA_ADMIN.course (NAME, FILIERE_ID, SEMESTRE_ID, CAPACITY) VALUES (:1, :2, :3, :4) RETURNING COURSE_ID INTO :5",
-                [course_name, filiere_id, semestre_id, capacity, course_id_var]
-            )
+            sql_insert_course = "INSERT INTO YAHYA_ADMIN.course (NAME, FILIERE_ID, SEMESTRE_ID, CAPACITY) VALUES (:1, :2, :3, :4) RETURNING COURSE_ID INTO :5"
+            cursor.execute(sql_insert_course, [course_name, filiere_id, semestre_id, capacity, course_id_var])
             new_course_id = int(course_id_var.getvalue()[0])
 
-            cursor.execute("INSERT INTO YAHYA_ADMIN.prof_course (PROF_ID, COURSE_ID) VALUES (:1, :2)", [prof_id, new_course_id])
+            # 2. Insert the professor-course link
+            sql_assign_prof = "INSERT INTO YAHYA_ADMIN.prof_course (PROF_ID, COURSE_ID) VALUES (:1, :2)"
+            cursor.execute(sql_assign_prof, [prof_id, new_course_id])
             
+            # 3. Insert prerequisites if any are provided
             if prerequisite_ids:
+                sql_add_prereq = "INSERT INTO YAHYA_ADMIN.course_prerequisite (COURSE_ID, PREREQUISITE_COURSE_ID) VALUES (:1, :2)"
                 prereq_data = [(new_course_id, int(prereq_id)) for prereq_id in prerequisite_ids]
-                cursor.executemany("INSERT INTO YAHYA_ADMIN.course_prerequisite (COURSE_ID, PREREQUISITE_COURSE_ID) VALUES (:1, :2)", prereq_data)
+                cursor.executemany(sql_add_prereq, prereq_data)
         
         connection.commit()
         return (True, f"Course '{course_name}' created successfully.")
     except Exception as e:
-        if connection: connection.rollback()
+        if connection:
+            connection.rollback()
         return (False, str(e))
     finally:
-        if connection: pool.release(connection)
+        if connection:
+            pool.release(connection)
 
 def create_new_professor(full_name, department_id, password):
     pool = get_db_pool()
