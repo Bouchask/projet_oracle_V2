@@ -1241,3 +1241,55 @@ BEGIN
     END IF;
 END;
 /
+
+-- Stored procedure for professors to submit grades
+CREATE OR REPLACE PROCEDURE sp_prof_submit_grade (
+    p_student_id  IN course_result.student_id%TYPE,
+    p_course_id   IN course_result.course_id%TYPE,
+    p_grade       IN course_result.grade%TYPE
+)
+IS
+    v_semestre_id course.semestre_id%TYPE;
+    v_year_id     semestre.year_id%TYPE;
+    v_status      course_result.status%TYPE;
+BEGIN
+    -- Input validation
+    IF p_grade < 0 OR p_grade > 20 THEN
+        RAISE_APPLICATION_ERROR(-20040, 'Grade must be between 0 and 20.');
+    END IF;
+
+    -- Determine the status based on the grade
+    IF p_grade >= 10 THEN
+        v_status := 'VALID';
+    ELSE
+        v_status := 'FAILED';
+    END IF;
+
+    -- Find the corresponding semester and year for the given course
+    SELECT c.semestre_id, s.year_id
+    INTO v_semestre_id, v_year_id
+    FROM course c
+    JOIN semestre s ON c.semestre_id = s.semestre_id
+    WHERE c.course_id = p_course_id;
+
+    -- Use MERGE to either UPDATE the existing record or INSERT a new one.
+    -- This is robust and handles cases where a result record may or may not exist.
+    MERGE INTO course_result cr
+    USING (SELECT p_student_id AS student_id, p_course_id AS course_id FROM dual) src
+    ON (cr.student_id = src.student_id AND cr.course_id = src.course_id)
+    WHEN MATCHED THEN
+        UPDATE SET
+            cr.grade = p_grade,
+            cr.status = v_status
+    WHEN NOT MATCHED THEN
+        INSERT (student_id, course_id, semestre_id, year_id, grade, status)
+        VALUES (p_student_id, p_course_id, v_semestre_id, v_year_id, p_grade, v_status);
+        
+    COMMIT;
+EXCEPTION
+    WHEN NO_DATA_FOUND THEN
+        RAISE_APPLICATION_ERROR(-20041, 'Invalid course_id provided. Course not found.');
+    WHEN OTHERS THEN
+        RAISE; -- Re-raise any other unexpected errors
+END sp_prof_submit_grade;
+/

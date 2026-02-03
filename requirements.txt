@@ -2,3 +2,4 @@ streamlit
 oracledb
 pandas
 Faker
+bcrypt

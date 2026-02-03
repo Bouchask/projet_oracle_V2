@@ -132,6 +132,11 @@ GRANT ROLE_PROF TO app_prof;
 GRANT ROLE_STUDENT TO app_student;
 GRANT ROLE_AUTH TO app_auth;
 
+-- Fix for ORA-00942: Explicitly ensure app_auth can see USER_ACCOUNT for login
+PROMPT Explicitly granting SELECT on YAHYA_ADMIN.user_account to app_auth and creating synonym...
+GRANT SELECT ON YAHYA_ADMIN.user_account TO app_auth;
+CREATE OR REPLACE PUBLIC SYNONYM user_account FOR YAHYA_ADMIN.user_account;
+
 
 -- =====================================================
 -- 6. Create Public Synonyms

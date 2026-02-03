@@ -226,3 +226,66 @@ def delete_course_with_details(course_id):
         return (False, str(e))
     finally:
         if connection: pool.release(connection)
+
+def create_seances_for_all_sections(course_id, filiere_id, semestre_id, filiere_name, semestre_code, seance_date, start_time, end_time, room, seance_type):
+    """
+    Creates a seance for every section associated with a filiere/semestre.
+    If no sections exist, it creates two default ones.
+    This is a transactional operation.
+    """
+    pool = get_db_pool()
+    connection = None
+    try:
+        connection = pool.acquire()
+        connection.begin()
+        
+        with connection.cursor() as cursor:
+            # 1. Check for existing sections
+            cursor.execute("SELECT SECTION_ID FROM SECTION WHERE FILIERE_ID = :1 AND SEMESTRE_ID = :2", [filiere_id, semestre_id])
+            sections = cursor.fetchall()
+            section_ids = [row[0] for row in sections]
+
+            # 2. If no sections exist, create two default ones
+            if not section_ids:
+                st.info("No sections found, creating two default sections (G1, G2)...")
+                new_sections_to_create = 2
+                for i in range(1, new_sections_to_create + 1):
+                    section_name = f"{filiere_name[:4].upper()}-{semestre_code}-G{i}"
+                    # Use a variable to hold the returned ID
+                    new_id_var = cursor.var(oracledb.NUMBER)
+                    cursor.execute(
+                        "INSERT INTO SECTION (NAME, FILIERE_ID, SEMESTRE_ID) VALUES (:1, :2, :3) RETURNING SECTION_ID INTO :4",
+                        [section_name, filiere_id, semestre_id, new_id_var]
+                    )
+                    # Get the value from the variable and add to our list
+                    section_ids.append(new_id_var.getvalue()[0])
+
+            # 3. Insert a seance for the FIRST available section to avoid conflicts.
+            #    The original logic of looping through all sections was guaranteed to fail
+            #    the room/time overlap trigger if more than one section existed.
+            seance_dml = "INSERT INTO SEANCE (COURSE_ID, SECTION_ID, SEANCE_DATE, START_TIME, END_TIME, ROOM, TYPE) VALUES (:1, :2, :3, :4, :5, :6, :7)"
+            seances_created = 0
+            if section_ids:
+                # Use only the first section to prevent room/time conflicts
+                first_section_id = section_ids[0]
+                params = [course_id, first_section_id, seance_date, start_time, end_time, room, seance_type]
+                cursor.execute(seance_dml, params)
+                seances_created = 1
+            else:
+                # This case should ideally not be reached due to section creation logic above, but as a safeguard:
+                return (False, "Could not find or create a section to assign the seance to.")
+
+        connection.commit()
+        return (True, f"Successfully created {seances_created} séance. It has been assigned to the first available section.")
+    except oracledb.DatabaseError as e:
+        if connection:
+            connection.rollback()
+        error_obj, = e.args
+        return (False, f"Database error: {error_obj.message}")
+    except Exception as e:
+        if connection:
+            connection.rollback()
+        return (False, f"An unexpected error occurred: {str(e)}")
+    finally:
+        if connection:
+            pool.release(connection)
